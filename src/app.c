@@ -675,7 +675,11 @@ static void addons_set_open(bool open)
     g_addons_open = open;
     ui_reset_focus_list();
     ui_set_focus(open ? ui_id("addons.filter") : g_addons_focus);
+    if (open) ui_show_focus();
+    ui_diagnostic("addons menu %s", open ? "opened" : "closed");
 }
+
+void app_open_addons(void) { addons_set_open(true); }
 
 static bool addons_row(uint32_t id, rectf r, const char *label, const char *value, bool enabled)
 {
@@ -726,8 +730,9 @@ static void draw_addons(void)
 
 static void global_buttons(void)
 {
-    if (ui_btn(BTN_SELECT) && !A.typing) {
+    if (ui_btn(BTN_SELECT) && !A.typing && !ui_capturing_combo()) {
         ui_consume(BTN_SELECT);
+        ui_diagnostic("SELECT delivered to add-ons");
         addons_set_open(!g_addons_open);
         return;
     }
@@ -865,7 +870,10 @@ void app_frame(float dt)
     } else {
         global_buttons();
         draw_main();
-        if (g_addons_open) draw_addons();
+        if (g_addons_open) {
+            ui_set_enabled(true);
+            draw_addons();
+        }
     }
     draw_toast();
     /* Desktop has no backlight: shade the window instead. */
