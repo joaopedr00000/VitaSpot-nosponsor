@@ -40,6 +40,7 @@ use crate::volume::{self, SystemMixer};
 pub enum Command {
     Shutdown,
     Logout,
+    FreeEnded(u64),
     Play {
         context: String,
         track: String,
@@ -138,6 +139,8 @@ struct Engine {
     backend: Arc<Backend>,
     commands: UnboundedReceiver<Command>,
     phase: Phase,
+    free_mode: bool,
+    free_player: crate::free_player::FreePlayer,
     cache: Option<Cache>,
     session: Option<Session>,
     spirc: Option<Spirc>,
@@ -206,6 +209,8 @@ impl Engine {
             backend,
             commands,
             phase: Phase::Starting,
+            free_mode: false,
+            free_player: crate::free_player::FreePlayer::default(),
             cache,
             session: None,
             spirc: None,
@@ -378,12 +383,33 @@ impl Engine {
     // ------------------------------------------------------------------
 
     async fn handle_command(&mut self, command: Command) -> bool {
+        if self.free_mode {
+            match &command {
+                Command::Play { context, track, index } => {
+                    self.free_player.play(self.shared.clone(), context.clone(), track.clone(), *index);
+                    return true;
+                }
+                Command::Pause => { self.free_player.pause(); return true; }
+                Command::Resume => { self.free_player.resume(self.shared.clone()); return true; }
+                Command::Seek(ms) => { self.free_player.seek(*ms); return true; }
+                Command::Next => { self.free_player.skip(self.shared.clone(), true); return true; }
+                Command::Prev => { self.free_player.skip(self.shared.clone(), false); return true; }
+                Command::FreeEnded(generation) => { self.free_player.ended(self.shared.clone(), *generation); return true; }
+                Command::AddToQueue(uri) => { self.free_player.add(&self.shared, uri); return true; }
+                Command::SetShuffle(_) | Command::SetRepeat(_) => {
+                    self.backend.emit_toast("Shuffle and repeat are not available in Free audio mode yet.");
+                    return true;
+                }
+                _ => {}
+            }
+        }
         match command {
             Command::Shutdown => {
                 self.shutting_down = true;
                 return false;
             }
             Command::Logout => self.logout().await,
+            Command::FreeEnded(_) => {},
             Command::RequestPage {
                 request_id,
                 uri,
@@ -813,6 +839,7 @@ impl Engine {
     // ------------------------------------------------------------------
 
     fn handle_player_event(&mut self, event: PlayerEvent) {
+        if self.free_mode { return; }
         match event {
             PlayerEvent::TrackChanged { audio_item } => {
                 let item = metadata::item_from_audio(&audio_item);
@@ -949,6 +976,7 @@ impl Engine {
     }
 
     fn apply_snapshot(&mut self, force: bool) {
+        if self.free_mode { return; }
         let Some(spirc) = self.spirc.clone() else {
             return;
         };
@@ -1243,7 +1271,7 @@ impl Engine {
         }
 
         if self.phase == Phase::LoggedIn {
-            self.check_buffer_timeout(now);
+            if !self.free_mode { self.check_buffer_timeout(now); }
             // The Vita drops sockets when it sleeps; detect the jump and
             // re-establish the session without involving the UI.
             if gap > SUSPEND_GAP_MS {
@@ -1479,11 +1507,21 @@ impl Engine {
                 .unwrap_or_else(|| username.clone());
         }
 
-        let message = if premium {
-            String::new()
-        } else {
-            "Free account: browsing enabled; playback depends on Spotify authorization.".to_string()
-        };
+        self.free_mode = product.as_deref() == Some("free");
+        if self.free_mode {
+            if let Some(player) = self.player.take() { player.stop(); }
+            if let Some(spirc) = self.spirc.take() { let _ = spirc.shutdown(); }
+            if let Some(done) = self.spirc_done.take() {
+                let _ = tokio::time::timeout(Duration::from_secs(3), done).await;
+            }
+            self.player_events = None;
+            crate::ad_filter::reset();
+            crate::free_source::cleanup(&self.backend);
+            log::info!("Free mode: Spotify catalog, separate audio source");
+        }
+        let message = if premium { String::new() }
+            else if self.free_mode { "Free account: Spotify library, alternate audio source.".to_string() }
+            else { "Free account: browsing enabled; playback depends on Spotify authorization.".to_string() };
 
         self.backend.set_auth(|auth| {
             auth.status = VAM_AUTH_LOGGED_IN;
@@ -1554,6 +1592,8 @@ impl Engine {
     }
 
     async fn teardown(&mut self) {
+        self.free_player.reset();
+        self.free_mode = false;
         self.buffering_since = None;
         self.buffering_timed_out = false;
         crate::ad_filter::reset();
@@ -1591,6 +1631,8 @@ impl Engine {
         if self.shutting_down {
             return;
         }
+        self.free_player.reset();
+        self.free_mode = false;
         crate::ad_filter::reset();
         self.phase = Phase::WaitingForCredentials;
         self.player = None;

@@ -396,6 +396,6 @@ void screen_now_playing(void)
         text_draw_vc(tr("Playing on another device"), x0 + 30, oy + 462, FS_S, FW_BOLD, rgb(C_ACCENT), w);
     }
 
-    text_draw_aligned(tr("VitaSpot is an unofficial Spotify client."), SCREEN_W / 2.0f, oy + SCREEN_H - 28, FS_XS,
+    text_draw_aligned(tr(A.auth.is_premium ? "VitaSpot is an unofficial Spotify client." : "Free account: Spotify library, alternate audio source."), SCREEN_W / 2.0f, oy + SCREEN_H - 28, FS_XS,
                       FW_REGULAR, rgb(C_MUTED), SCREEN_W - 40, ALIGN_CENTER);
 }

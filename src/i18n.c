@@ -7,6 +7,17 @@
 #include <limits.h>
 #include "vam_backend.h"
 static const char *const messages[][4] = {
+    {"Free account: Spotify library, alternate audio source.", "Conta Free: biblioteca Spotify, áudio de fonte alternativa.", "Cuenta Free: biblioteca Spotify, audio de fuente alternativa.", "Compte Free : bibliothèque Spotify, autre source audio."},
+    {"Free audio source connection failed.", "Falha na conexão com a fonte de áudio Free.", "Falló la conexión con la fuente de audio Free.", "Connexion à la source audio Free impossible."},
+    {"No matching public recording found.", "Nenhuma gravação pública correspondente encontrada.", "No se encontró una grabación pública equivalente.", "Aucun enregistrement public correspondant trouvé."},
+    {"No compatible AAC stream found.", "Nenhum áudio AAC compatível encontrado.", "No se encontró audio AAC compatible.", "Aucun flux AAC compatible trouvé."},
+    {"Could not write temporary audio.", "Não foi possível gravar o áudio temporário.", "No se pudo escribir el audio temporal.", "Impossible d’écrire l’audio temporaire."},
+    {"Free audio decoding failed.", "Falha na decodificação de áudio Free.", "Falló la decodificación de audio Free.", "Échec du décodage audio Free."},
+    {"Free audio output failed.", "Falha na saída de áudio Free.", "Falló la salida de audio Free.", "Échec de la sortie audio Free."},
+    {"Free audio file is too large.", "Arquivo de áudio Free muito grande.", "Archivo de audio Free demasiado grande.", "Fichier audio Free trop volumineux."},
+    {"No more tracks in the Free queue.", "Não há mais faixas na fila Free.", "No hay más pistas en la cola Free.", "Plus de titres dans la file Free."},
+    {"Free queue item unavailable.", "Faixa da fila Free indisponível.", "Pista de la cola Free no disponible.", "Titre de la file Free indisponible."},
+    {"Shuffle and repeat are not available in Free audio mode yet.", "Aleatório e repetição ainda não disponíveis no modo Free.", "Aleatorio y repetición aún no disponibles en modo Free.", "Lecture aléatoire et répétition indisponibles en mode Free."},
     {"Tweaks", "Tweaks", "Tweaks", "Tweaks"},
     {"Ad blocker", "Bloqueador de anúncios", "Bloqueador de anuncios", "Bloqueur de publicités"},
     {"Enabled", "Ativado", "Activado", "Activé"},
