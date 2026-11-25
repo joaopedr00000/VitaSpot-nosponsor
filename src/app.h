@@ -99,7 +99,6 @@ extern app A;
 /* app.c */
 bool app_init(SDL_Window *w, SDL_Renderer *r);
 void app_shutdown(void);
-void app_open_addons(void);
 const char *app_diagnostic_status(void);
 void app_handle_sdl_event(const SDL_Event *e);
 void app_frame(float dt);
