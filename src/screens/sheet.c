@@ -16,6 +16,10 @@ static int build_options(const vam_item *it, option *o)
 {
     int n = 0;
     bool track = it->kind == VAM_KIND_TRACK || it->kind == VAM_KIND_EPISODE;
+    if (track && strncmp(it->uri, "audius:", 7) == 0) {
+        o[n++] = (option){ ACT_QUEUE, ICON_QUEUE, tr("Add to queue") };
+        return n;
+    }
     if (track) {
         o[n++] = (option){ ACT_SAVE, it->is_saved ? ICON_HEART : ICON_HEART_OUTLINE,
                            it->is_saved ? tr("Remove from Liked Songs") : tr("Add to Liked Songs") };
