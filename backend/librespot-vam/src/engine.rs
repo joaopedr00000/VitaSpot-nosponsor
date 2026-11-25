@@ -96,6 +96,7 @@ const PLAYER_TICK: Duration = Duration::from_millis(100);
 const VOLUME_TICK: Duration = Duration::from_millis(50);
 const SLOW_TICK: Duration = Duration::from_secs(1);
 const SUSPEND_GAP_MS: u64 = 30_000;
+const BUFFER_TIMEOUT_MS: u64 = 30_000;
 // Spirc reports option changes late and in steps: switching repeat takes two
 // calls (clear one flag, set the other), and a volume drag sends many values
 // whose echoes arrive after the drag ends. Either would make the control
@@ -163,6 +164,8 @@ struct Engine {
     discovery_retry_at: Option<tokio::time::Instant>,
     last_wifi: bool,
     last_tick_ms: u64,
+    buffering_since: Option<u64>,
+    buffering_timed_out: bool,
     shutting_down: bool,
     /// Tracks that failed to load since the last one played. Spirc (vendored)
     /// stops playback once a few in a row fail; this picks the message.
@@ -226,6 +229,8 @@ impl Engine {
             discovery_retry_at: None,
             last_wifi: wifi,
             last_tick_ms: now_ms_inner(),
+            buffering_since: None,
+            buffering_timed_out: false,
             shutting_down: false,
             unavailable_in_a_row: 0,
         };
@@ -407,6 +412,9 @@ impl Engine {
                 track,
                 index,
             } => {
+                self.buffering_since = Some(now_ms_inner());
+                self.buffering_timed_out = false;
+                log::info!("play requested: context={context:?} track={track:?} index={index}");
                 self.optimistic_play(&context);
                 self.spawn_play(context, track, index);
             }
@@ -422,11 +430,21 @@ impl Engine {
                 }
             }
             Command::Resume => {
+                self.buffering_timed_out = false;
+                self.buffering_since = None;
                 self.optimistic_resume();
                 self.spawn_simple_spirc(true, |spirc| spirc.play());
             }
-            Command::Next => self.spawn_next(),
-            Command::Prev => self.spawn_simple_spirc(true, |spirc| spirc.prev()),
+            Command::Next => {
+                self.buffering_timed_out = false;
+                self.buffering_since = None;
+                self.spawn_next();
+            }
+            Command::Prev => {
+                self.buffering_timed_out = false;
+                self.buffering_since = None;
+                self.spawn_simple_spirc(true, |spirc| spirc.prev());
+            }
             Command::Seek(position) => {
                 log::info!(
                     "seek to {position} ms requested (active: {})",
@@ -825,6 +843,9 @@ impl Engine {
                 });
             }
             PlayerEvent::Loading { position_ms, .. } => {
+                if self.buffering_timed_out { return; }
+                self.buffering_since.get_or_insert_with(now_ms_inner);
+                log::info!("player loading at {position_ms} ms");
                 self.backend.set_player(move |state| {
                     state.playback = VAM_PLAYBACK_BUFFERING;
                     state.position_ms = position_ms;
@@ -834,6 +855,8 @@ impl Engine {
             }
             PlayerEvent::Playing { position_ms, .. }
             | PlayerEvent::PositionCorrection { position_ms, .. } => {
+                self.buffering_since = None;
+                self.buffering_timed_out = false;
                 self.unavailable_in_a_row = 0;
                 self.backend.set_player(move |state| {
                     state.playback = VAM_PLAYBACK_PLAYING;
@@ -843,6 +866,7 @@ impl Engine {
                 });
             }
             PlayerEvent::Paused { position_ms, .. } => {
+                self.buffering_since = None;
                 self.backend.set_player(move |state| {
                     state.playback = VAM_PLAYBACK_PAUSED;
                     state.position_ms = position_ms;
@@ -859,6 +883,7 @@ impl Engine {
                 });
             }
             PlayerEvent::Stopped { .. } => {
+                self.buffering_since = None;
                 if self.unavailable_in_a_row > 0 {
                     self.unavailable_in_a_row = 0;
                     self.backend.emit_error(
@@ -888,8 +913,7 @@ impl Engine {
                 log::warn!("track unavailable: {}", track_id.to_uri().unwrap_or_default());
                 self.unavailable_in_a_row += 1;
                 if self.unavailable_in_a_row == 1 {
-                    self.backend
-                        .emit_error("That track isn't available. Skipping to the next one.");
+                    self.backend.emit_error("Spotify could not load this track. Check vam.log for the cause.");
                 }
             }
             PlayerEvent::EndOfTrack { .. } => {}
@@ -922,6 +946,9 @@ impl Engine {
         };
         let snapshot = spirc.snapshot();
         crate::ad_filter::update(&snapshot.track_uri, &snapshot.track_metadata, snapshot.is_active && (snapshot.is_playing || snapshot.is_buffering));
+        if self.buffering_timed_out && snapshot.is_buffering {
+            return;
+        }
         if !force && !snapshot_changed(&snapshot, &self.last_snapshot) {
             return;
         }
@@ -1166,6 +1193,33 @@ impl Engine {
     // Slow maintenance
     // ------------------------------------------------------------------
 
+    // Bound the optimistic UI and Connect buffering state. A timeout does not
+    // change the account's authorization or attempt to decrypt rejected audio.
+    fn check_buffer_timeout(&mut self, now: u64) {
+        if self.backend.player_snapshot().playback != VAM_PLAYBACK_BUFFERING {
+            self.buffering_since = None;
+            return;
+        }
+        let started = *self.buffering_since.get_or_insert(now);
+        if now.saturating_sub(started) < BUFFER_TIMEOUT_MS { return; }
+        self.buffering_since = None;
+        self.buffering_timed_out = true;
+        let auth = self.backend.auth_snapshot();
+        log::warn!("playback buffering timeout: premium={} active={} context={:?} track={:?}",
+            auth.is_premium, self.last_snapshot.is_active,
+            self.last_snapshot.context_uri, self.last_snapshot.track_uri);
+        if let Some(spirc) = &self.spirc {
+            if let Err(e) = spirc.pause() {
+                log::warn!("pause after buffering timeout failed: {e}");
+            }
+        }
+        self.backend.set_player(|state| {
+            state.playback = VAM_PLAYBACK_STOPPED;
+            state.seq = state.seq.wrapping_add(1);
+        });
+        self.backend.emit_error("Playback timed out. Check vam.log for authorization or network errors.");
+    }
+
     async fn slow_tick(&mut self) {
         let now = now_ms_inner();
         let gap = now.saturating_sub(self.last_tick_ms);
@@ -1182,6 +1236,7 @@ impl Engine {
         }
 
         if self.phase == Phase::LoggedIn {
+            self.check_buffer_timeout(now);
             // The Vita drops sockets when it sleeps; detect the jump and
             // re-establish the session without involving the UI.
             if gap > SUSPEND_GAP_MS {
@@ -1492,6 +1547,8 @@ impl Engine {
     }
 
     async fn teardown(&mut self) {
+        self.buffering_since = None;
+        self.buffering_timed_out = false;
         crate::ad_filter::reset();
         log::info!("tearing down backend");
         if let Some(player) = self.player.take() {
