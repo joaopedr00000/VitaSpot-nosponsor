@@ -413,7 +413,7 @@ impl Engine {
             } => {
                 self.buffering_since = Some(now_ms_inner());
                 self.buffering_timed_out = false;
-                log::info!("play requested: context={context:?} track={track:?} index={index}");
+                log::info!("play requested: context={context:?} track={track:?} index={index} ad_filter={}", crate::ad_filter::enabled());
                 self.optimistic_play(&context);
                 self.spawn_play(context, track, index);
             }
