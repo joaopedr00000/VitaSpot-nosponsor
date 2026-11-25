@@ -204,13 +204,14 @@ impl Engine {
             });
         }
 
+        let audius_player = crate::audius::LocalPlayer::new(&backend);
         let mut engine = Engine {
             shared,
             backend,
             commands,
             phase: Phase::Starting,
             audius_mode: false,
-            audius_player: crate::audius::LocalPlayer::default(),
+            audius_player,
             cache,
             session: None,
             spirc: None,
@@ -1562,6 +1563,7 @@ impl Engine {
         log::info!(
             "account authorized for login (premium: {premium}, product: {product:?})"
         );
+        if self.audius_mode { self.audius_player.restore(&self.backend); }
         self.apply_snapshot(true);
         Ok(())
     }
