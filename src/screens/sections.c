@@ -130,7 +130,8 @@ float draw_entity_row(sections_ctx *c, const vam_item *it, uint32_t index, float
         bool cur = app_is_current_context(it->uri);
         float tw = c->w - (tx - c->x) - (cur ? 52 : 12);
         text_draw(it->kind == VAM_KIND_COLLECTION ? tr(it->title) : it->title, tx, y + 13, FS_M, FW_REGULAR, cur ? rgb(C_ACCENT) : rgb(C_TEXT), tw);
-        text_draw(it->subtitle, tx, y + 39, FS_S, FW_REGULAR, rgb(C_SUBTEXT), tw);
+        char local_sub[VAM_TEXT_MAX * 2];
+        text_draw(tr_subtitle(it->kind, it->subtitle, local_sub, sizeof(local_sub), 0), tx, y + 39, FS_S, FW_REGULAR, rgb(C_SUBTEXT), tw);
         if (cur)
             gfx_icon(ICON_VOLUME, c->x + c->w - ROW_INSET - 26, y + ENTITY_ROW_H / 2, 18, rgb(C_ACCENT));
         if (res.focused)
@@ -233,7 +234,8 @@ static float draw_shelf(sections_ctx *c, model_section *s, uint32_t si, float y)
                               rgb(0x000000));
             }
             text_draw(it->kind == VAM_KIND_COLLECTION ? tr(it->title) : it->title, x + 10, y + CARD_IMG + 20, FS_S, FW_BOLD, rgb(C_TEXT), CARD_IMG);
-            text_draw(artist ? tr("Artist") : it->subtitle, x + 10, y + CARD_IMG + 44, FS_XS, FW_REGULAR,
+            char local_sub[VAM_TEXT_MAX * 2];
+            text_draw(artist ? tr("Artist") : tr_subtitle(it->kind, it->subtitle, local_sub, sizeof(local_sub), 0), x + 10, y + CARD_IMG + 44, FS_XS, FW_REGULAR,
                       rgb(C_SUBTEXT), CARD_IMG);
             if (res.focused)
                 draw_focus_ring(r, 8);
