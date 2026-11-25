@@ -262,6 +262,10 @@ uint64_t vam_now_ms(void);
 /* Write a line from the UI into the backend log (vam.log on the Vita). */
 void vam_log(const char *message);
 
+/* Local filter state; 1 = enabled, 0 = disabled. Changes apply immediately. */
+int32_t vam_ad_filter_enabled(void);
+vam_result vam_set_ad_filter(int32_t enabled);
+
 /* ------------------------------------------------------------------------ */
 /* Events                                                                    */
 /* ------------------------------------------------------------------------ */
