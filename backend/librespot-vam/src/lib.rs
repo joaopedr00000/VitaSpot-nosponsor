@@ -8,6 +8,7 @@
 
 mod abi;
 mod ad_filter;
+mod audius;
 mod engine;
 mod device_login;
 mod ffi;
