@@ -82,7 +82,7 @@ screen.
 | Square | Item menu |
 | L / R | Previous / next track |
 | Start | Now Playing |
-| Select | Add-ons: toggle local ad filter or open queue |
+| Select | Queue |
 | Select + Start | Screen off, music keeps playing; any button turns it back on (changeable in Settings) |
 
 ### Desktop
@@ -96,7 +96,7 @@ screen.
 | C / Tab | Square | Item menu |
 | Q / E | L / R | Previous / next track |
 | N | Start | Now Playing |
-| M | Select | Add-ons |
+| M | Select | Queue |
 | M + N | Select + Start | Screen off (shades the window) |
 
 Mouse: click, drag to scroll, wheel, long-press for the menu.
@@ -255,4 +255,4 @@ This branch removes the frontend-only Premium screen and redundant local checks 
 
 ## Experimental native ad filter
 
-The test branch filters dedicated ad image hosts and locally silences explicitly marked ads on Vita without changing system volume. See [the compatibility review](docs/ad-filter-research.md) for scope, sources, tests and limitations. Press SELECT, choose Ad blocker, and confirm to toggle the existing filter immediately. The selection is saved in the legacy `ux0:data/VitaSpot/disable_ad_filter` marker; no restart is required. The queue remains accessible from the same menu. `vam-diagnostic.log` records filter changes and playback requests; `vam-ui.log` records the requested and actual state. To compare, test the same track with the filter enabled and disabled. This does not unlock Premium or guarantee uninterrupted playback.
+The test branch filters dedicated ad image hosts and locally silences explicitly marked ads on Vita without changing system volume. See [the compatibility review](docs/ad-filter-research.md) for scope, sources, tests and limitations. Open Settings > Tweaks > Ad blocker to toggle the existing filter immediately. The selection is saved in the legacy `ux0:data/VitaSpot/disable_ad_filter` marker; no restart is required. SELECT opens the queue as before. `vam-diagnostic.log` records filter changes and playback requests including the requested and actual state. To compare, test the same track with the filter enabled and disabled. This does not unlock Premium or guarantee uninterrupted playback.
