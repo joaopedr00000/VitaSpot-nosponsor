@@ -7,14 +7,18 @@ static ENABLED: AtomicBool = AtomicBool::new(true);
 static MUTED: AtomicBool = AtomicBool::new(false);
 
 pub fn configure(enabled: bool) {
-    ENABLED.store(enabled, Ordering::Relaxed);
+    ENABLED.store(enabled, Ordering::SeqCst);
     reset();
+    log::info!("ad filter: {}", if enabled { "enabled" } else { "disabled" });
+}
+pub fn enabled() -> bool {
+    ENABLED.load(Ordering::SeqCst)
 }
 pub fn reset() {
     MUTED.store(false, Ordering::Relaxed);
 }
 pub fn muted() -> bool {
-    MUTED.load(Ordering::Relaxed)
+    enabled() && MUTED.load(Ordering::Relaxed)
 }
 fn explicit_ad(uri: &str, metadata: &HashMap<String, String>) -> bool {
     uri.starts_with("spotify:ad:") ||
@@ -23,7 +27,7 @@ fn explicit_ad(uri: &str, metadata: &HashMap<String, String>) -> bool {
                 v == "1" || v.eq_ignore_ascii_case("true"))))
 }
 pub fn update(uri: &str, metadata: &HashMap<String, String>, active: bool) {
-    let mute = ENABLED.load(Ordering::Relaxed) && active && explicit_ad(uri, metadata);
+    let mute = enabled() && active && explicit_ad(uri, metadata);
     if MUTED.swap(mute, Ordering::Relaxed) != mute {
         log::info!("ad filter: local audio mute {}", if mute { "on" } else { "off" });
     }
@@ -40,7 +44,7 @@ fn ad_image_host(url: &str) -> bool {
         "tpc.googlesyndication.com" | "googleads.g.doubleclick.net")
 }
 pub fn block_image(url: &str) -> bool {
-    ENABLED.load(Ordering::Relaxed) && ad_image_host(url)
+    enabled() && ad_image_host(url)
 }
 
 #[cfg(test)]
