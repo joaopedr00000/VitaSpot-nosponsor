@@ -26,6 +26,7 @@ set(FRONTEND_SOURCES
     src/model.c
     src/power.c
     src/prefs.c
+    src/i18n.c
     src/gfx/gfx.c
     src/gfx/text.c
     src/gfx/images.c
