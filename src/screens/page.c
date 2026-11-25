@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "../app.h"
+#include "../i18n.h"
 #include "../gfx/images.h"
 #include "../gfx/text.h"
 #include "../theme.h"
@@ -61,7 +62,7 @@ static void action_row(view *v, float x, float y, color avg)
     cx += 56;
     if (p->kind == VAM_KIND_ARTIST) {
         float w = 0;
-        if (pill_button(ui_id("page.follow"), p->is_saved ? "Following" : "Follow", cx - 16, y + 8, false, &w))
+        if (pill_button(ui_id("page.follow"), p->is_saved ? tr("Following") : tr("Follow"), cx - 16, y + 8, false, &w))
             app_toggle_saved(p->uri, p->is_saved);
         cx += w + 16;
     } else if (can_save(p->kind)) {
@@ -98,11 +99,12 @@ static float draw_header(view *v, float y0, color avg)
 
     float tx = cx + COVER + 24;
     float tw = CONTENT_X + CONTENT_W - PAD - tx;
-    const char *label = p->kind == VAM_KIND_COLLECTION ? "Playlist" : kind_label(p->kind);
+    const char *label = p->kind == VAM_KIND_COLLECTION ? tr("Playlist") : kind_label(p->kind);
     float ty = top + 18;
     text_draw(label, tx, ty, FS_S, FW_BOLD, rgb(C_TEXT), tw);
-    int ts = title_size(p->title, tw);
-    text_draw(p->title, tx, ty + 22, ts, FW_BOLD, rgb(C_TEXT), tw);
+    const char *title = p->kind == VAM_KIND_COLLECTION ? tr(p->title) : p->title;
+    int ts = title_size(title, tw);
+    text_draw(title, tx, ty + 22, ts, FW_BOLD, rgb(C_TEXT), tw);
     float by = top + COVER - 22;
     if (p->description[0])
         text_draw_wrapped(p->description, tx, by - 46, FS_S, FW_REGULAR, with_alpha(rgb(C_TEXT), 0.7f), tw, 2);
@@ -128,7 +130,7 @@ static void sticky_bar(view *v, color avg)
         rectf hit = rect(CONTENT_X + 60, 6, TOUCH_MIN, TOUCH_MIN);
         if (ui_item(ui_id("page.sticky.play"), hit, UI_F_NOFOCUS).clicked)
             play_page(v->page);
-        text_draw_vc(v->page->title, CONTENT_X + 116, 30, FS_L, FW_BOLD, with_alpha(rgb(C_TEXT), a),
+        text_draw_vc(v->page->kind == VAM_KIND_COLLECTION ? tr(v->page->title) : v->page->title, CONTENT_X + 116, 30, FS_L, FW_BOLD, with_alpha(rgb(C_TEXT), a),
                      CONTENT_W - 150);
     }
 }
@@ -175,7 +177,7 @@ void screen_page(view *v)
 
     float y;
     if (queue) {
-        text_draw("Queue", CONTENT_X + PAD + 52, y0 + 16, FS_XL, FW_BOLD, rgb(C_TEXT), CONTENT_W);
+        text_draw(tr("Queue"), CONTENT_X + PAD + 52, y0 + 16, FS_XL, FW_BOLD, rgb(C_TEXT), CONTENT_W);
         y = y0 + 62;
     } else {
         y = draw_header(v, y0, avg);
@@ -189,7 +191,7 @@ void screen_page(view *v)
     float before = y;
     y = draw_sections(&c, p, 0, y);
     if (y == before && !v->req)
-        text_draw_aligned(queue ? "Your queue is empty" : "Nothing here yet", CONTENT_X + CONTENT_W / 2.0f,
+        text_draw_aligned(queue ? tr("Your queue is empty") : tr("Nothing here yet"), CONTENT_X + CONTENT_W / 2.0f,
                           y + 30, FS_M, FW_BOLD, rgb(C_SUBTEXT), 0, ALIGN_CENTER);
     v->content_h = y + v->scroll.pos - CONTENT_Y + 24;
     ui_scroll_end();
