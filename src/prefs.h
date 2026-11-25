@@ -11,6 +11,7 @@ typedef struct prefs {
     int off_after;  /* seconds without input, 0 = never     */
     int bitrate;    /* streaming quality: 96, 160 or 320    */
     int cache_mb;   /* audio cache cap, one of CACHE_CHOICES */
+    int language;   /* index into native translation catalogue */
     bool lyrics;    /* Now Playing shows lyrics, not the art */
 } prefs;
 
