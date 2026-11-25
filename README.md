@@ -256,3 +256,11 @@ This branch removes the frontend-only Premium screen and redundant local checks 
 ## Experimental native ad filter
 
 The test branch filters dedicated ad image hosts and locally silences explicitly marked ads on Vita without changing system volume. See [the compatibility review](docs/ad-filter-research.md) for scope, sources, tests and limitations. Open Settings > Tweaks > Ad blocker to toggle the existing filter immediately. The selection is saved in the legacy `ux0:data/VitaSpot/disable_ad_filter` marker; no restart is required. SELECT opens the queue as before. `vam-diagnostic.log` records filter changes and playback requests including the requested and actual state. To compare, test the same track with the filter enabled and disabled. This does not unlock Premium or guarantee uninterrupted playback.
+
+## Experimental Audius mode (Free accounts)
+
+After Spotify login, Premium continues to use the existing librespot player. Non-Premium accounts automatically use the independent public Audius catalog instead. Home shows Audius trending tracks and Search queries Audius, not Spotify. Audio comes from the official Audius public stream endpoint; no Spotify tokens or account data are sent to Audius. No subscription is needed for public tracks. The catalogs are different; Spotify playlists and favorites are not imported or matched to other recordings.
+
+This first implementation buffers each authorized public track in a temporary file (maximum 32 MiB) before decoding via the existing 44.1 kHz stereo audio path. The file is removed after playback. Pause, resume, seek and queue navigation are implemented experimentally. Audius favorites, library sync, repeat, shuffle and lyrics are not yet implemented. API/rate-limit, format or network errors are shown rather than silently substituting another source. Check vam-diagnostic.log for Audio provider: Audius, Audius received ... audio bytes, and Audius PCM submitted to audio sink.
+
+Reference: https://docs.audius.co/api/ . Physical Vita playback still requires validation.
