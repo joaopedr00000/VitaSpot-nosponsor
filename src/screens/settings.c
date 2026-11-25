@@ -42,7 +42,7 @@ static float account_card(float x, float y, float w)
     if (g_confirm_logout)
         text_draw(tr("Log out of Spotify on this Vita?"), tx, card.y + 54, FS_S, FW_REGULAR, rgb(C_TEXT), tw);
     else
-        text_draw(A.auth.is_premium ? "Spotify Premium" : "Spotify Free", tx, card.y + 54, FS_S, FW_REGULAR,
+        text_draw(A.auth.is_premium ? "Spotify Premium" : "Spotify Free / Audius", tx, card.y + 54, FS_S, FW_REGULAR,
                   rgb(C_SUBTEXT), tw);
 
     if (g_confirm_logout) {
