@@ -87,8 +87,9 @@ void screen_sheet(void)
 
     float rad = s->item.kind == VAM_KIND_ARTIST ? 26 : 4;
     draw_cover(s->item.image_url, rect(x + 18, y + 16, 52, 52), rad, s->item.kind, s->item.title);
-    text_draw(s->item.title, x + 84, y + 17, FS_M, FW_BOLD, rgb(C_TEXT), w - 100);
-    text_draw(s->item.subtitle, x + 84, y + 44, FS_S, FW_REGULAR, rgb(C_SUBTEXT), w - 100);
+    text_draw(s->item.kind == VAM_KIND_COLLECTION ? tr(s->item.title) : s->item.title, x + 84, y + 17, FS_M, FW_BOLD, rgb(C_TEXT), w - 100);
+    char local_sub[VAM_TEXT_MAX * 2];
+    text_draw(tr_subtitle(s->item.kind, s->item.subtitle, local_sub, sizeof(local_sub), 0), x + 84, y + 44, FS_S, FW_REGULAR, rgb(C_SUBTEXT), w - 100);
     gfx_rect(rect(x, y + head_h - 1, w, 1), rgb(C_DIVIDER));
 
     for (int i = 0; i < n; i++) {
