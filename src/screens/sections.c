@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "../app.h"
+#include "../i18n.h"
 #include "../gfx/text.h"
 #include "../theme.h"
 
@@ -96,7 +97,7 @@ float draw_track_row(sections_ctx *c, const vam_item *it, uint32_t index, float 
 
     float tw = text_r - x;
     color title_c = current ? rgb(C_ACCENT) : playable ? rgb(C_TEXT) : rgb(C_MUTED);
-    text_draw(it->title, x, y + 9, FS_M, FW_REGULAR, title_c, tw);
+    text_draw(it->kind == VAM_KIND_COLLECTION ? tr(it->title) : it->title, x, y + 9, FS_M, FW_REGULAR, title_c, tw);
     float sx = x;
     if (it->is_explicit) {
         explicit_badge(sx, y + 45);
@@ -128,7 +129,7 @@ float draw_entity_row(sections_ctx *c, const vam_item *it, uint32_t index, float
         float tx = c->x + ROW_INSET + s + 14;
         bool cur = app_is_current_context(it->uri);
         float tw = c->w - (tx - c->x) - (cur ? 52 : 12);
-        text_draw(it->title, tx, y + 13, FS_M, FW_REGULAR, cur ? rgb(C_ACCENT) : rgb(C_TEXT), tw);
+        text_draw(it->kind == VAM_KIND_COLLECTION ? tr(it->title) : it->title, tx, y + 13, FS_M, FW_REGULAR, cur ? rgb(C_ACCENT) : rgb(C_TEXT), tw);
         text_draw(it->subtitle, tx, y + 39, FS_S, FW_REGULAR, rgb(C_SUBTEXT), tw);
         if (cur)
             gfx_icon(ICON_VOLUME, c->x + c->w - ROW_INSET - 26, y + ENTITY_ROW_H / 2, 18, rgb(C_ACCENT));
@@ -183,7 +184,7 @@ static float draw_grid(sections_ctx *c, model_section *s, uint32_t si, float y)
         draw_cover(it->image_url, rect(x, ty, GRID_H, GRID_H), rad, it->kind, it->title);
         bool cur = app_is_current_context(it->uri);
         float tw = w - GRID_H - 24 - (cur ? 26 : 0);
-        text_draw_vc(it->title, x + GRID_H + 12, ty + GRID_H / 2, FS_S, FW_BOLD,
+        text_draw_vc(it->kind == VAM_KIND_COLLECTION ? tr(it->title) : it->title, x + GRID_H + 12, ty + GRID_H / 2, FS_S, FW_BOLD,
                      cur ? rgb(C_ACCENT) : rgb(C_TEXT), tw);
         if (cur)
             gfx_equalizer(x + w - 18, ty + GRID_H / 2, 12, A.time, app_is_playing(), rgb(C_ACCENT));
@@ -231,8 +232,8 @@ static float draw_shelf(sections_ctx *c, model_section *s, uint32_t si, float y)
                 gfx_equalizer(img.x + img.w - 22, img.y + img.h - 22, 14, A.time, app_is_playing(),
                               rgb(0x000000));
             }
-            text_draw(it->title, x + 10, y + CARD_IMG + 20, FS_S, FW_BOLD, rgb(C_TEXT), CARD_IMG);
-            text_draw(artist ? "Artist" : it->subtitle, x + 10, y + CARD_IMG + 44, FS_XS, FW_REGULAR,
+            text_draw(it->kind == VAM_KIND_COLLECTION ? tr(it->title) : it->title, x + 10, y + CARD_IMG + 20, FS_S, FW_BOLD, rgb(C_TEXT), CARD_IMG);
+            text_draw(artist ? tr("Artist") : it->subtitle, x + 10, y + CARD_IMG + 44, FS_XS, FW_REGULAR,
                       rgb(C_SUBTEXT), CARD_IMG);
             if (res.focused)
                 draw_focus_ring(r, 8);
@@ -257,7 +258,7 @@ float draw_sections(sections_ctx *c, model_page *p, uint32_t first, float y)
         if (s->title[0]) {
             y += 14;
             if (near_view(c, y, 36))
-                text_draw(s->title, c->x + ROW_INSET, y, FS_XL, FW_BOLD, rgb(C_TEXT), c->w - 2 * ROW_INSET);
+                text_draw(tr(s->title), c->x + ROW_INSET, y, FS_XL, FW_BOLD, rgb(C_TEXT), c->w - 2 * ROW_INSET);
             y += 40;
         }
         switch (s->layout) {
