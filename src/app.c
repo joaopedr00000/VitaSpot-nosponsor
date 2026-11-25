@@ -721,8 +721,6 @@ void app_frame(float dt)
 
     if (A.auth.status != VAM_AUTH_LOGGED_IN) {
         screen_login();
-    } else if (!A.auth.is_premium) {
-        screen_premium();
     } else {
         global_buttons();
         draw_main();
