@@ -1418,7 +1418,7 @@ impl Engine {
         let message = if premium {
             String::new()
         } else {
-            "Spotify Premium is required to play music.".to_string()
+            "Free account: browsing enabled; playback depends on Spotify authorization.".to_string()
         };
 
         self.backend.set_auth(|auth| {
