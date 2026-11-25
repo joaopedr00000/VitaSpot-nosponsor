@@ -236,6 +236,10 @@ void screen_settings(view *v)
         language_next();
     y += 62;
 
+    if (pill_button(ui_id("settings.addons"), tr("Add-ons"), x, y, false, NULL))
+        app_open_addons();
+    y += 62;
+
     text_draw(tr("Account"), x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
     y += 38;
     y += account_card(x, y, w) + 32;
