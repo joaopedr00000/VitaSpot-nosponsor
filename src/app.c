@@ -1,4 +1,5 @@
 #include "app.h"
+#include "i18n.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -78,7 +79,7 @@ void app_request_view(view *v)
     v->req = vam_request_page(uri, 0, 50);
     if (!v->req) {
         v->failed = true;
-        snprintf(v->error, sizeof(v->error), "Couldn't reach the player service.");
+        snprintf(v->error, sizeof(v->error), tr("Couldn't reach the player service."));
     }
 }
 
@@ -224,7 +225,7 @@ void app_toast(const char *msg)
 {
     if (!msg || !*msg)
         return;
-    snprintf(A.toast, sizeof(A.toast), "%s", msg);
+    snprintf(A.toast, sizeof(A.toast), "%s", tr(msg));
     A.toast_until = A.time + 2.6f;
 }
 
@@ -234,11 +235,11 @@ static void check(vam_result r, const char *what)
         return;
     char buf[160];
     if (r == VAM_ERR_NOT_PREMIUM)
-        snprintf(buf, sizeof(buf), "Spotify Premium is required to %s.", what);
+        snprintf(buf, sizeof(buf), tr("Spotify Premium is required to %s."), what);
     else if (r == VAM_ERR_NETWORK)
-        snprintf(buf, sizeof(buf), "No connection. Couldn't %s.", what);
+        snprintf(buf, sizeof(buf), tr("No connection. Couldn't %s."), what);
     else
-        snprintf(buf, sizeof(buf), "Couldn't %s.", what);
+        snprintf(buf, sizeof(buf), tr("Couldn't %s."), what);
     app_toast(buf);
 }
 
@@ -247,16 +248,16 @@ void app_play_item(const vam_item *it, const char *context_uri, uint32_t index)
     if (!it)
         return;
     if (!it->is_playable && (it->kind == VAM_KIND_TRACK || it->kind == VAM_KIND_EPISODE)) {
-        app_toast("This song isn't available.");
+        app_toast(tr("This song isn't available."));
         return;
     }
     switch (it->kind) {
     case VAM_KIND_TRACK:
     case VAM_KIND_EPISODE:
-        check(vam_play(context_uri, it->uri, index), "play this");
+        check(vam_play(context_uri, it->uri, index), tr("play this"));
         break;
     default:
-        check(vam_play(it->uri, NULL, 0), "play this");
+        check(vam_play(it->uri, NULL, 0), tr("play this"));
         break;
     }
 }
@@ -265,7 +266,7 @@ void app_toggle_saved(const char *uri, bool currently_saved)
 {
     uint32_t req = vam_set_saved(uri, !currently_saved);
     if (!req) {
-        app_toast("Couldn't update your library.");
+        app_toast(tr("Couldn't update your library."));
         return;
     }
     for (int i = 0; i < PENDING_SAVES; i++) {
@@ -280,9 +281,9 @@ void app_toggle_saved(const char *uri, bool currently_saved)
     apply_saved(uri, !currently_saved);
     bool is_track = strncmp(uri, "spotify:track:", 14) == 0;
     if (is_track)
-        app_toast(currently_saved ? "Removed from Liked Songs" : "Added to Liked Songs");
+        app_toast(currently_saved ? tr("Removed from Liked Songs") : tr("Added to Liked Songs"));
     else
-        app_toast(currently_saved ? "Removed from Your Library" : "Saved to Your Library");
+        app_toast(currently_saved ? tr("Removed from Your Library") : tr("Saved to Your Library"));
 }
 
 void app_open_sheet(const vam_item *item, const char *context_uri, uint32_t index)
@@ -511,7 +512,7 @@ static void handle_vam_event(vam_event *ev)
         } else if (!v->page) {
             v->failed = true;
             snprintf(v->error, sizeof(v->error), "%s",
-                     ev->message[0] ? ev->message : "Something went wrong.");
+                     ev->message[0] ? tr(ev->message) : tr("Something went wrong."));
         }
         break;
     }
@@ -527,7 +528,7 @@ static void handle_vam_event(vam_event *ev)
                 continue;
             if (ev->result != VAM_OK) {
                 apply_saved(g_saves[i].uri, g_saves[i].prev);
-                app_toast(ev->message[0] ? ev->message : "Couldn't update your library.");
+                app_toast(ev->message[0] ? ev->message : tr("Couldn't update your library."));
             }
             g_saves[i].req = 0;
         }
@@ -612,17 +613,17 @@ static void global_buttons(void)
     if (ui_btn(BTN_TRIANGLE)) {
         ui_consume(BTN_TRIANGLE);
         if (A.player.has_track)
-            check(app_is_playing() ? vam_pause() : vam_resume(), "change playback");
+            check(app_is_playing() ? vam_pause() : vam_resume(), tr("change playback"));
     }
     if (ui_btn(BTN_L)) {
         ui_consume(BTN_L);
         if (A.player.has_track)
-            check(vam_prev(), "skip back");
+            check(vam_prev(), tr("skip back"));
     }
     if (ui_btn(BTN_R)) {
         ui_consume(BTN_R);
         if (A.player.has_track)
-            check(vam_next(), "skip");
+            check(vam_next(), tr("skip"));
     }
     if (ui_btn(BTN_SELECT)) {
         ui_consume(BTN_SELECT);
