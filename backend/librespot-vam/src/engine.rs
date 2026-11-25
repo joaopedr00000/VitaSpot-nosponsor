@@ -123,6 +123,7 @@ pub async fn run(shared: Arc<Shared>) {
         // shutdown hang the host process.
         let _ = tokio::time::timeout(Duration::from_secs(2), discovery.shutdown()).await;
     }
+    engine.cancel_pairing();
     engine.teardown().await;
     *backend
         .commands
@@ -146,6 +147,8 @@ struct Engine {
     player_events: Option<PlayerEventChannel>,
     spirc_done: Option<oneshot::Receiver<()>>,
     discovery: Option<Discovery>,
+    pairing: Option<tokio::task::JoinHandle<Result<Credentials, &'static str>>>,
+    pairing_retry_at: tokio::time::Instant,
     credentials: Option<Credentials>,
     last_snapshot: ConnectSnapshot,
     last_credentials_marker: Option<String>,
@@ -209,6 +212,8 @@ impl Engine {
             player_events: None,
             spirc_done: None,
             discovery: None,
+            pairing: None,
+            pairing_retry_at: tokio::time::Instant::now(),
             credentials: None,
             last_snapshot: ConnectSnapshot::default(),
             last_credentials_marker: None,
@@ -1216,6 +1221,11 @@ impl Engine {
         }
 
         if self.phase == Phase::WaitingForCredentials {
+            if !wifi { self.cancel_pairing(); }
+            if wifi && self.reconnect_at.is_none() {
+                self.poll_pairing().await;
+                if self.phase == Phase::LoggedIn { return; }
+            }
             if self.discovery.is_none() && wifi {
                 let retry = self
                     .discovery_retry_at
@@ -1278,6 +1288,7 @@ impl Engine {
     }
 
     async fn login(&mut self, credentials: Credentials) -> Result<(), String> {
+        self.cancel_pairing();
         self.teardown().await;
         self.unavailable_in_a_row = 0;
 
@@ -1376,7 +1387,7 @@ impl Engine {
         self.system_mixer = system_mixer;
         self.player_events = Some(player_events);
         self.spirc_done = Some(done_rx);
-        self.credentials = Some(credentials);
+        self.credentials = self.stored_credentials().or(Some(credentials));
         self.phase = Phase::LoggedIn;
         self.shared.web.set_session(session.clone());
 
@@ -1413,7 +1424,7 @@ impl Engine {
         self.backend.set_auth(|auth| {
             auth.status = VAM_AUTH_LOGGED_IN;
             auth.is_premium = premium as u8;
-            auth.zeroconf_active = 1;
+            auth.zeroconf_active = self.discovery.is_some() as u8;
             copy_str(&mut auth.username, &username);
             copy_str(&mut auth.display_name, &display_name);
             copy_str(&mut auth.image_url, &profile.image_url);
@@ -1446,6 +1457,8 @@ impl Engine {
     }
 
     async fn logout(&mut self) {
+        self.cancel_pairing();
+        self.pairing_retry_at = tokio::time::Instant::now();
         self.teardown().await;
         // Blank the saved login rather than deleting it: the file stays where
         // a replacement credentials.json is expected.
@@ -1530,6 +1543,38 @@ impl Engine {
         });
     }
 
+    fn cancel_pairing(&mut self) {
+        if let Some(task) = self.pairing.take() { task.abort(); }
+        self.backend.set_auth(|auth| {
+            auth.login_url = [0; VAM_URL_MAX];
+            auth.login_code = [0; 32];
+        });
+    }
+
+    async fn poll_pairing(&mut self) {
+        if self.pairing.as_ref().is_some_and(|task| task.is_finished()) {
+            if let Some(task) = self.pairing.take() {
+                self.cancel_pairing();
+                self.pairing_retry_at = tokio::time::Instant::now() + Duration::from_secs(30);
+                match task.await {
+                    Ok(Ok(credentials)) => {
+                        if self.login(credentials).await.is_err() {
+                            self.backend.set_auth_status(VAM_AUTH_ERROR,
+                                "Pairing approved, but Spotify session login failed.");
+                        }
+                    }
+                    Ok(Err(message)) => self.backend.set_auth_status(VAM_AUTH_ERROR, message),
+                    Err(_) => self.backend.set_auth_status(VAM_AUTH_ERROR, "Pairing worker stopped."),
+                }
+            }
+        }
+        if self.phase == Phase::WaitingForCredentials && self.pairing.is_none()
+            && tokio::time::Instant::now() >= self.pairing_retry_at {
+            let backend = self.backend.clone();
+            self.pairing = Some(tokio::spawn(crate::device_login::run(backend)));
+        }
+    }
+
     fn start_discovery(&mut self) {
         if !platform::wifi_connected() {
             self.backend.set_auth(|auth| {
@@ -1571,8 +1616,7 @@ impl Engine {
                     auth.zeroconf_active = 0;
                     copy_str(
                         &mut auth.message,
-                        "Zeroconf is unavailable. Copy a librespot credentials.json \
-                         into the VitaSpot data folder to sign in.",
+                        "Connect discovery unavailable. Try QR pairing or PC login.",
                     );
                 });
             }
