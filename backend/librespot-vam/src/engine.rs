@@ -176,7 +176,6 @@ impl Engine {
     async fn new(shared: Arc<Shared>, commands: UnboundedReceiver<Command>) -> Self {
         let backend = shared.backend.clone();
         let config = backend.config.clone();
-        crate::ad_filter::configure(!std::path::Path::new(&config.path("disable_ad_filter")).exists());
 
         // Make sure the directory tree exists before any worker touches it.
         let _ = std::fs::create_dir_all(&config.data_dir);
