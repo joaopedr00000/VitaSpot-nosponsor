@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "../app.h"
+#include "../i18n.h"
 #include "../gfx/text.h"
 #include "../theme.h"
 
@@ -17,22 +18,22 @@ static int build_options(const vam_item *it, option *o)
     bool track = it->kind == VAM_KIND_TRACK || it->kind == VAM_KIND_EPISODE;
     if (track) {
         o[n++] = (option){ ACT_SAVE, it->is_saved ? ICON_HEART : ICON_HEART_OUTLINE,
-                           it->is_saved ? "Remove from Liked Songs" : "Add to Liked Songs" };
-        o[n++] = (option){ ACT_QUEUE, ICON_QUEUE, "Add to queue" };
+                           it->is_saved ? tr("Remove from Liked Songs") : tr("Add to Liked Songs") };
+        o[n++] = (option){ ACT_QUEUE, ICON_QUEUE, tr("Add to queue") };
         if (it->album_uri[0])
-            o[n++] = (option){ ACT_ALBUM, ICON_DISC, "Go to album" };
+            o[n++] = (option){ ACT_ALBUM, ICON_DISC, tr("Go to album") };
         if (it->artist_uri[0])
-            o[n++] = (option){ ACT_ARTIST, ICON_PERSON, "Go to artist" };
+            o[n++] = (option){ ACT_ARTIST, ICON_PERSON, tr("Go to artist") };
         return n;
     }
-    o[n++] = (option){ ACT_PLAY, ICON_PLAY, "Play" };
+    o[n++] = (option){ ACT_PLAY, ICON_PLAY, tr("Play") };
     if (it->kind == VAM_KIND_ARTIST)
-        o[n++] = (option){ ACT_SAVE, ICON_PERSON, it->is_saved ? "Unfollow" : "Follow" };
+        o[n++] = (option){ ACT_SAVE, ICON_PERSON, it->is_saved ? tr("Unfollow") : tr("Follow") };
     else if (it->kind != VAM_KIND_COLLECTION)
         o[n++] = (option){ ACT_SAVE, it->is_saved ? ICON_HEART : ICON_HEART_OUTLINE,
-                           it->is_saved ? "Remove from Your Library" : "Save to Your Library" };
+                           it->is_saved ? tr("Remove from Your Library") : tr("Save to Your Library") };
     if (it->artist_uri[0])
-        o[n++] = (option){ ACT_ARTIST, ICON_PERSON, "Go to artist" };
+        o[n++] = (option){ ACT_ARTIST, ICON_PERSON, tr("Go to artist") };
     return n;
 }
 
@@ -50,9 +51,9 @@ static void run(act a, const vam_item *it)
         break;
     case ACT_QUEUE:
         if (vam_add_to_queue(it->uri) == VAM_OK)
-            app_toast("Added to queue");
+            app_toast(tr("Added to queue"));
         else
-            app_toast("Couldn't add to queue.");
+            app_toast(tr("Couldn't add to queue."));
         app_close_sheet();
         break;
     case ACT_ALBUM:
