@@ -32,6 +32,13 @@ pub(crate) struct LocalFileMetadata {
 }
 
 impl SymphoniaDecoder {
+    /// Decode a public, unencrypted MP3 file through the existing format probe.
+    pub fn new_mp3_file(input: std::fs::File) -> DecoderResult<Self> {
+        let mut hint = Hint::new();
+        hint.with_extension("mp3");
+        Self::new(input, hint)
+    }
+
     pub fn new<R>(input: R, hint: Hint) -> DecoderResult<Self>
     where
         R: MediaSource + 'static,
