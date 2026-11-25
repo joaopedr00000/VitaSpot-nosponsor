@@ -108,7 +108,8 @@ static float draw_header(view *v, float y0, color avg)
     float by = top + COVER - 22;
     if (p->description[0])
         text_draw_wrapped(p->description, tx, by - 46, FS_S, FW_REGULAR, with_alpha(rgb(C_TEXT), 0.7f), tw, 2);
-    text_draw(p->subtitle, tx, by, FS_S, FW_REGULAR, rgb(C_TEXT), tw);
+    char local_sub[VAM_TEXT_MAX * 2];
+    text_draw(tr_subtitle(p->kind, p->subtitle, local_sub, sizeof(local_sub), 1), tx, by, FS_S, FW_REGULAR, rgb(C_TEXT), tw);
     (void)avg;
     return top + COVER + 18;
 }
