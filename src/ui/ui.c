@@ -1,7 +1,4 @@
 #include "ui.h"
-#ifdef __vita__
-#include <psp2/ctrl.h>
-#endif
 
 #include <math.h>
 #include <string.h>
@@ -492,15 +489,6 @@ void ui_begin_frame(float dt)
     g.hot_prev = g.hot_cur;
     g.hot_cur = 0;
 
-#ifdef __vita__
-    /* The native controller read also covers SDL builds that omit or
-       misreport SELECT/START. Merge through the same edge/combo handler. */
-    SceCtrlData pad;
-    if (sceCtrlPeekBufferPositive(0, &pad, 1) > 0) {
-        set_btn(BTN_SELECT, (pad.buttons & SCE_CTRL_SELECT) != 0);
-        set_btn(BTN_START, (pad.buttons & SCE_CTRL_START) != 0);
-    }
-#endif
     for (int b = 0; b < BTN_COUNT; b++) {
         g.pressed_b[b] = g.ev_pressed[b];
         g.ev_pressed[b] = false;
@@ -627,7 +615,6 @@ ui_res ui_item(uint32_t id, rectf r, unsigned flags)
 
 uint32_t ui_focus(void) { return g.focus; }
 void ui_set_focus(uint32_t id) { g.focus = id; }
-void ui_show_focus(void) { g.focus_visible = true; }
 bool ui_focus_visible(void) { return g.focus_visible; }
 
 void ui_reset_focus_list(void)
