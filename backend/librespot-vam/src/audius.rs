@@ -331,7 +331,8 @@ async fn download(id: &str, control: &Control, path: PathBuf) -> Result<Temporar
         if size > MAX_AUDIO { return Err(ApiError::unavailable("Audius track too large.")); }
         file.write_all(&chunk).map_err(|_| ApiError::unavailable("Audius temporary file failed."))?;
     }
-    file.sync_all().map_err(|_| ApiError::unavailable("Audius temporary file failed."))?;
+    file.flush().map_err(|_| ApiError::unavailable("Audius temporary file failed."))?;
+    if let Err(e) = file.sync_all() { log::debug!("Audius cache sync: {e}"); }
     drop(file);
     if size == 0 && !control.cancelled() { return Err(ApiError::unavailable("Audius content unavailable.")); }
     log::info!("Audius received {size} audio bytes");
