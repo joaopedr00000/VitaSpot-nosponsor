@@ -190,7 +190,15 @@ impl log::Log for FileLogger {
         }
     }
 
-    fn flush(&self) {}
+    fn flush(&self) {
+        use std::io::Write;
+        if let Ok(mut guard) = self.file.lock() {
+            if let Some(file) = guard.as_mut() {
+                let _ = file.flush();
+                let _ = file.sync_all();
+            }
+        }
+    }
 }
 
 impl FileLogger {
@@ -212,6 +220,7 @@ impl FileLogger {
             };
             if let Some(file) = guard.as_mut() {
                 let _ = writeln!(file, "[{}] ERROR crash: {}", now_ms(), args);
+                let _ = file.flush();
             }
             return;
         }
@@ -276,19 +285,30 @@ static ALLOCATOR: LoggingAlloc = LoggingAlloc;
 pub fn init_logging(data_dir: &str) {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        let path = format!("{}/vam.log", data_dir.trim_end_matches('/'));
-        let file = std::fs::OpenOptions::new()
+        let dir = data_dir.trim_end_matches('/');
+        let mut path = format!("{dir}/vam-diagnostic.log");
+        let open = |p: &str| std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open(&path)
-            .ok();
+            .open(p);
+        let (file, primary_error) = match open(&path) {
+            Ok(file) => (Some(file), None),
+            Err(e) => {
+                path = format!("{dir}/vam.log");
+                (open(&path).ok(), Some(e))
+            }
+        };
         let logger = LOGGER.get_or_init(|| FileLogger {
             file: Mutex::new(file),
         });
         let _ = log::set_logger(logger);
         log::set_max_level(log::LevelFilter::Info);
-        log::info!("VitaSpot backend starting (log: {path})");
+        log::info!("VitaSpot backend diagnostic revision 1 (log: {path})");
+        if let Some(error) = primary_error {
+            log::warn!("Could not open diagnostic log; using legacy path: {error}");
+        }
+        log::logger().flush();
 
         // The Vita build aborts on panic (panic_abort) and stderr goes
         // nowhere, so without this a crash leaves no reason behind.
@@ -319,6 +339,7 @@ struct VitaSink {
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
     port: c_int,
+    logged_first_packet: bool,
 }
 
 impl VitaSink {
@@ -332,6 +353,7 @@ impl VitaSink {
             stop: Arc::new(AtomicBool::new(false)),
             thread: None,
             port: -1,
+            logged_first_packet: false,
         }
     }
 
@@ -361,6 +383,7 @@ impl VitaSink {
 impl Sink for VitaSink {
     fn start(&mut self) -> SinkResult<()> {
         self.stop.store(false, Ordering::SeqCst);
+        self.logged_first_packet = false;
         {
             // `stop()` closes the ring; reopen it, or the next output thread
             // sees `closed` and exits at once (silent playback).
@@ -431,6 +454,10 @@ impl Sink for VitaSink {
                             samples.len() * std::mem::size_of::<i16>(),
                         )
                     };
+                    if !self.logged_first_packet && !bytes.is_empty() {
+                        self.logged_first_packet = true;
+                        log::info!("audio sink received decoded PCM: {} bytes", bytes.len());
+                    }
                     self.push_bytes(bytes);
                 }
                 other => {
