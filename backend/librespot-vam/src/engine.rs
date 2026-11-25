@@ -40,6 +40,7 @@ use crate::volume::{self, SystemMixer};
 pub enum Command {
     Shutdown,
     Logout,
+    AudiusEnded(u64),
     Play {
         context: String,
         track: String,
@@ -391,8 +392,11 @@ impl Engine {
                 Command::Pause => { self.audius_player.pause(); return true; }
                 Command::Resume => { self.audius_player.resume(self.backend.clone()); return true; }
                 Command::Seek(ms) => { self.audius_player.seek(*ms); return true; }
-                Command::Next | Command::Prev | Command::SetShuffle(_) |
-                Command::SetRepeat(_) | Command::AddToQueue(_) => {
+                Command::Next => { self.audius_player.skip(self.backend.clone(), true); return true; }
+                Command::Prev => { self.audius_player.skip(self.backend.clone(), false); return true; }
+                Command::AudiusEnded(generation) => { self.audius_player.ended(self.backend.clone(), *generation); return true; }
+                Command::AddToQueue(uri) => { self.audius_player.add_to_queue(&self.backend, uri); return true; }
+                Command::SetShuffle(_) | Command::SetRepeat(_) => {
                     self.backend.emit_toast("Not available in Audius mode.");
                     return true;
                 }
@@ -405,6 +409,7 @@ impl Engine {
                 return false;
             }
             Command::Logout => self.logout().await,
+            Command::AudiusEnded(_) => {},
             Command::RequestPage {
                 request_id,
                 uri,
@@ -651,16 +656,24 @@ impl Engine {
         let shared = self.shared.clone();
         let backend = self.backend.clone();
         let audius = self.audius_mode;
+        let catalog = self.audius_player.catalog.clone();
+        let queue = if audius && uri == "vam:queue" { Some(self.audius_player.queue_page()) } else { None };
         tokio::spawn(async move {
             if backend.events.is_cancelled(request_id) {
                 backend.events.clear_cancelled(request_id);
                 return;
             }
             let result = if audius {
-                crate::audius::page(&uri, limit).await
+                if let Some(page) = queue { Ok(page) } else { crate::audius::page(&uri, limit).await }
             } else {
                 pages::build_page(&shared, &uri, offset, limit).await
             };
+            if audius && (uri == "vam:home" || uri.starts_with("vam:search:")) && !backend.events.is_cancelled(request_id) {
+                if let Ok(page) = &result {
+                    let tracks = page.sections.iter().flat_map(|s| s.items.iter().cloned()).collect();
+                    *catalog.lock().unwrap_or_else(|e| e.into_inner()) = tracks;
+                }
+            }
             let mut event = vam_event::default();
             event.type_ = VAM_EV_PAGE;
             event.request_id = request_id;
@@ -680,6 +693,7 @@ impl Engine {
     }
 
     fn spawn_image(&self, request_id: u32, url: String) {
+        let audius = self.audius_mode;
         let shared = self.shared.clone();
         let backend = self.backend.clone();
         tokio::spawn(async move {
@@ -690,7 +704,7 @@ impl Engine {
             let mut event = vam_event::default();
             event.type_ = VAM_EV_IMAGE;
             event.request_id = request_id;
-            match images::fetch_image(&shared, &url).await {
+            match if audius { crate::audius::image(&url).await } else { images::fetch_image(&shared, &url).await } {
                 Ok(bytes) => {
                     let boxed = bytes.into_boxed_slice();
                     event.result = VAM_OK;
@@ -1273,8 +1287,9 @@ impl Engine {
             }
         }
 
+        if self.audius_mode { return; }
         if self.phase == Phase::LoggedIn {
-            if !self.audius_mode { self.check_buffer_timeout(now); }
+            self.check_buffer_timeout(now);
             // The Vita drops sockets when it sleeps; detect the jump and
             // re-establish the session without involving the UI.
             if gap > SUSPEND_GAP_MS {
@@ -1596,7 +1611,7 @@ impl Engine {
     }
 
     async fn teardown(&mut self) {
-        self.audius_player.stop();
+        self.audius_player.reset();
         self.audius_mode = false;
         self.buffering_since = None;
         self.buffering_timed_out = false;
@@ -1635,7 +1650,7 @@ impl Engine {
         if self.shutting_down {
             return;
         }
-        self.audius_player.stop();
+        self.audius_player.reset();
         self.audius_mode = false;
         crate::ad_filter::reset();
         self.phase = Phase::WaitingForCredentials;
