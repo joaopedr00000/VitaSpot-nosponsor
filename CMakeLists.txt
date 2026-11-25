@@ -7,7 +7,7 @@ project(VitaSpot C)
 
 # App version, shown in Settings and at the top of vam.log. A "d" suffix marks
 # a development build; it changes only when a release is cut.
-set(VITASPOT_VERSION "0.0.9d")
+set(VITASPOT_VERSION "0.0.10d")
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -73,7 +73,7 @@ if(VITA)
 
     set(VITA_APP_NAME "VitaSpot")
     set(VITA_TITLEID "VTAM00001")
-    set(VITA_VERSION "01.05")
+    set(VITA_VERSION "01.06")
 
     target_include_directories(VitaSpot PRIVATE $ENV{VITASDK}/arm-vita-eabi/include/SDL2)
 
