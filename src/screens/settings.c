@@ -236,9 +236,30 @@ void screen_settings(view *v)
         language_next();
     y += 62;
 
-    if (pill_button(ui_id("settings.addons"), tr("Add-ons"), x, y, false, NULL))
-        app_open_addons();
-    y += 62;
+    text_draw(tr("Tweaks"), x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
+    y += 38;
+    rectf tweaks = rect(x, y, w, SCREEN_ROW_H);
+    gfx_rrect(tweaks, 8, rgb(C_SURFACE));
+    bool filter_on = vam_ad_filter_enabled() != 0;
+    const char *filter_value = tr(filter_on ? "Enabled" : "Disabled");
+    float right = tweaks.x + tweaks.w - 16;
+    float bw = pill_w(filter_value);
+    text_draw_vc(tr("Ad blocker"), tweaks.x + 16, tweaks.y + tweaks.h / 2,
+                 FS_M, FW_REGULAR, rgb(C_TEXT), tweaks.w - bw - 48);
+    if (pill_button(ui_id("settings.tweaks.adblock"), filter_value, right - bw,
+                    tweaks.y + (tweaks.h - 40) / 2, filter_on, NULL)) {
+        int result = vam_set_ad_filter(filter_on ? 0 : 1);
+        char diagnostic[100];
+        snprintf(diagnostic, sizeof(diagnostic), "Tweaks: ad filter requested=%d result=%d actual=%d",
+                 filter_on ? 0 : 1, result, vam_ad_filter_enabled());
+        vam_log(diagnostic);
+        app_toast(tr(result == VAM_OK
+                     ? (filter_on ? "Ad blocker disabled." : "Ad blocker enabled.")
+                     : "Could not save ad blocker setting."));
+    }
+    y += tweaks.h + 10;
+    text_draw(tr("Changes apply immediately."), x, y, FS_S, FW_REGULAR, rgb(C_MUTED), w);
+    y += text_line_height(FS_S) + 32;
 
     text_draw(tr("Account"), x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
     y += 38;
