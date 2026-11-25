@@ -108,23 +108,40 @@ impl Control {
 pub struct LocalPlayer {
     current: Option<Arc<Control>>,
     last_uri: String,
+    pub catalog: Arc<Mutex<Vec<Item>>>,
+    queue: Vec<Item>,
+    index: usize,
+    generation: u64,
     // Prevent two Audius workers opening the same Vita audio port concurrently.
     output: Arc<Mutex<()>>,
 }
 impl LocalPlayer {
     pub fn stop(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
         if let Some(control) = self.current.take() {
             let _guard = control.publish.lock().unwrap_or_else(|e| e.into_inner());
             control.cancelled.store(true, Ordering::Release);
         }
     }
     pub fn play(&mut self, backend: Arc<Backend>, uri: &str) {
+        let catalog = self.catalog.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(index) = catalog.iter().position(|item| item.uri == uri) {
+            self.queue = catalog;
+            self.index = index;
+        } else {
+            self.queue.clear();
+            self.index = 0;
+        }
+        self.start(backend, uri);
+    }
+    fn start(&mut self, backend: Arc<Backend>, uri: &str) {
         let Some(id) = id_from_uri(uri).map(str::to_owned) else {
             backend.emit_error("Choose a track from Audius.");
             return;
         };
         self.stop();
         self.last_uri = uri.to_string();
+        let generation = self.generation;
         let control = Arc::new(Control { seek: AtomicU32::new(NO_SEEK), ..Default::default() });
         self.current = Some(control.clone());
         let output = self.output.clone();
@@ -155,6 +172,7 @@ impl LocalPlayer {
                     .await.map_err(|_| ApiError::unavailable("Audius audio worker failed."))?
             }.await;
             if !control.cancelled() {
+                let completed = result.is_ok();
                 if let Err(error) = result {
                     log::warn!("Audius playback failed: {}", error.message);
                     backend.emit_error(&error.message);
@@ -165,8 +183,61 @@ impl LocalPlayer {
                     s.seq = s.seq.wrapping_add(1);
                 });
                 log::logger().flush();
+                if completed {
+                    backend.send_command(crate::engine::Command::AudiusEnded(generation));
+                }
             }
         });
+    }
+    pub fn ended(&mut self, backend: Arc<Backend>, generation: u64) {
+        if generation == self.generation && self.index + 1 < self.queue.len() {
+            self.skip(backend, true);
+        }
+    }
+    pub fn skip(&mut self, backend: Arc<Backend>, forward: bool) {
+        let index = if forward { self.index.checked_add(1) } else { self.index.checked_sub(1) };
+        if let Some(index) = index.filter(|i| *i < self.queue.len()) {
+            self.index = index;
+            let uri = self.queue[index].uri.clone();
+            self.start(backend, &uri);
+        } else {
+            backend.emit_toast("No more Audius tracks.");
+        }
+    }
+    pub fn queue_page(&self) -> Page {
+        let mut page = Page::new(VAM_KIND_QUEUE, "vam:queue");
+        page.title = "Queue".into();
+        let mut section = Section::list("Audius");
+        for item in self.queue.iter().skip(self.index.saturating_add(1)) {
+            section.push(item.clone());
+        }
+        section.finish();
+        page.sections.push(section);
+        page
+    }
+    pub fn add_to_queue(&mut self, backend: &Backend, uri: &str) {
+        let catalog = self.catalog.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(item) = catalog.iter().find(|item| item.uri == uri) {
+            // A single-track start may not have a catalog context.
+            if self.queue.is_empty() {
+                self.queue.push(Item { uri: self.last_uri.clone(), ..Default::default() });
+                self.index = 0;
+            }
+            if self.queue.len() < 100 {
+                self.queue.push(item.clone());
+                backend.set_player(|s| s.seq = s.seq.wrapping_add(1));
+                backend.emit_toast("Added to queue");
+            }
+        } else {
+            backend.emit_toast("Not available in Audius mode.");
+        }
+    }
+    pub fn reset(&mut self) {
+        self.stop();
+        self.last_uri.clear();
+        self.queue.clear();
+        self.index = 0;
+        self.catalog.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
     pub fn pause(&self) {
         if let Some(c) = &self.current { c.paused.store(true, Ordering::Release); }
@@ -174,7 +245,7 @@ impl LocalPlayer {
     pub fn resume(&mut self, backend: Arc<Backend>) {
         if backend.player_snapshot().playback == VAM_PLAYBACK_STOPPED {
             let uri = self.last_uri.clone();
-            if !uri.is_empty() { self.play(backend, &uri); }
+            if !uri.is_empty() { self.start(backend, &uri); }
         } else if let Some(c) = &self.current {
             c.paused.store(false, Ordering::Release);
         }
@@ -213,6 +284,19 @@ async fn download(backend: &Backend, id: &str, control: &Control) -> Result<Temp
     if size == 0 && !control.cancelled() { return Err(ApiError::unavailable("Audius content unavailable.")); }
     log::info!("Audius received {size} audio bytes");
     Ok(temp)
+}
+
+pub async fn image(url: &str) -> Result<Vec<u8>, ApiError> {
+    let mut response = client()?.get(url).send().await.map_err(|_| ApiError::network("Audius connection failed."))?;
+    if !response.status().is_success() { return Err(ApiError::unavailable("Audius content unavailable.")); }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| ApiError::network("Audius connection failed."))? {
+        if bytes.len().saturating_add(chunk.len()) > MAX_JSON {
+            return Err(ApiError::unavailable("Audius response too large."));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
 }
 
 fn decode(backend: &Backend, control: &Control, output: &Mutex<()>, file: Temporary) -> Result<(), ApiError> {
