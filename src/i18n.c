@@ -7,6 +7,15 @@
 #include <limits.h>
 #include "vam_backend.h"
 static const char *const messages[][4] = {
+    {"Add-ons", "Complementos", "Complementos", "Extensions"},
+    {"Ad blocker", "Bloqueador de anúncios", "Bloqueador de anuncios", "Bloqueur de publicités"},
+    {"Enabled", "Ativado", "Activado", "Activé"},
+    {"Disabled", "Desativado", "Desactivado", "Désactivé"},
+    {"Close", "Fechar", "Cerrar", "Fermer"},
+    {"Changes apply immediately.", "As alterações são imediatas.", "Los cambios son inmediatos.", "Les modifications sont immédiates."},
+    {"Ad blocker disabled.", "Bloqueador de anúncios desativado.", "Bloqueador de anuncios desactivado.", "Bloqueur de publicités désactivé."},
+    {"Ad blocker enabled.", "Bloqueador de anúncios ativado.", "Bloqueador de anuncios activado.", "Bloqueur de publicités activé."},
+    {"Could not save ad blocker setting.", "Não foi possível salvar a opção de bloqueio.", "No se pudo guardar el ajuste de bloqueo.", "Impossible d’enregistrer le réglage du blocage."},
     {"Could not write vam-ui.log", "Falha ao gravar vam-ui.log", "No se pudo escribir vam-ui.log", "Impossible d’écrire vam-ui.log"},
     {"Backend log: vam-diagnostic.log", "Log do backend: vam-diagnostic.log", "Registro: vam-diagnostic.log", "Journal : vam-diagnostic.log"},
     {"Backend log: vam.log (fallback)", "Log do backend: vam.log (alternativo)", "Registro: vam.log (alternativo)", "Journal : vam.log (secours)"},
