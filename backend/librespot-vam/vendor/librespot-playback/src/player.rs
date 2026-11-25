@@ -1094,6 +1094,7 @@ impl PlayerTrackLoader {
                 Ok(key) => Some(key),
                 Err(e) => {
                     error!("Audio authorization/key unavailable; refusing to decode protected audio: {e}");
+                    log::logger().flush();
                     return None;
                 }
             };
