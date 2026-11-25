@@ -138,6 +138,8 @@ struct Engine {
     backend: Arc<Backend>,
     commands: UnboundedReceiver<Command>,
     phase: Phase,
+    audius_mode: bool,
+    audius_player: crate::audius::LocalPlayer,
     cache: Option<Cache>,
     session: Option<Session>,
     spirc: Option<Spirc>,
@@ -206,6 +208,8 @@ impl Engine {
             backend,
             commands,
             phase: Phase::Starting,
+            audius_mode: false,
+            audius_player: crate::audius::LocalPlayer::default(),
             cache,
             session: None,
             spirc: None,
@@ -378,6 +382,23 @@ impl Engine {
     // ------------------------------------------------------------------
 
     async fn handle_command(&mut self, command: Command) -> bool {
+        if self.audius_mode {
+            match &command {
+                Command::Play { track, .. } => {
+                    self.audius_player.play(self.backend.clone(), track);
+                    return true;
+                }
+                Command::Pause => { self.audius_player.pause(); return true; }
+                Command::Resume => { self.audius_player.resume(self.backend.clone()); return true; }
+                Command::Seek(ms) => { self.audius_player.seek(*ms); return true; }
+                Command::Next | Command::Prev | Command::SetShuffle(_) |
+                Command::SetRepeat(_) | Command::AddToQueue(_) => {
+                    self.backend.emit_toast("Not available in Audius mode.");
+                    return true;
+                }
+                _ => {}
+            }
+        }
         match command {
             Command::Shutdown => {
                 self.shutting_down = true;
@@ -629,12 +650,17 @@ impl Engine {
     fn spawn_page(&self, request_id: u32, uri: String, offset: u32, limit: u32) {
         let shared = self.shared.clone();
         let backend = self.backend.clone();
+        let audius = self.audius_mode;
         tokio::spawn(async move {
             if backend.events.is_cancelled(request_id) {
                 backend.events.clear_cancelled(request_id);
                 return;
             }
-            let result = pages::build_page(&shared, &uri, offset, limit).await;
+            let result = if audius {
+                crate::audius::page(&uri, limit).await
+            } else {
+                pages::build_page(&shared, &uri, offset, limit).await
+            };
             let mut event = vam_event::default();
             event.type_ = VAM_EV_PAGE;
             event.request_id = request_id;
@@ -693,7 +719,9 @@ impl Engine {
             event.type_ = VAM_EV_LYRICS;
             event.request_id = request_id;
             copy_str(&mut event.uri, &track_uri);
-            match lyrics::fetch_lyrics(&shared, &track_uri).await {
+            match if track_uri.starts_with("audius:") {
+                Err(crate::webapi::ApiError::new(VAM_ERR_UNSUPPORTED, "Not available in Audius mode."))
+            } else { lyrics::fetch_lyrics(&shared, &track_uri).await } {
                 Ok(lyrics) => {
                     event.result = VAM_OK;
                     event.lyrics = lyrics.into_raw();
@@ -715,8 +743,9 @@ impl Engine {
                 backend.events.clear_cancelled(request_id);
                 return;
             }
-            let result =
-                saved::set_saved(&shared.web, &shared.saved, &uri, saved).await;
+            let result = if uri.starts_with("audius:") {
+                Err(crate::webapi::ApiError::new(VAM_ERR_UNSUPPORTED, "Not available in Audius mode."))
+            } else { saved::set_saved(&shared.web, &shared.saved, &uri, saved).await };
             let mut event = vam_event::default();
             event.type_ = VAM_EV_REQUEST_DONE;
             event.request_id = request_id;
@@ -813,6 +842,7 @@ impl Engine {
     // ------------------------------------------------------------------
 
     fn handle_player_event(&mut self, event: PlayerEvent) {
+        if self.audius_mode { return; }
         match event {
             PlayerEvent::TrackChanged { audio_item } => {
                 let item = metadata::item_from_audio(&audio_item);
@@ -949,6 +979,7 @@ impl Engine {
     }
 
     fn apply_snapshot(&mut self, force: bool) {
+        if self.audius_mode { return; }
         let Some(spirc) = self.spirc.clone() else {
             return;
         };
@@ -1243,7 +1274,7 @@ impl Engine {
         }
 
         if self.phase == Phase::LoggedIn {
-            self.check_buffer_timeout(now);
+            if !self.audius_mode { self.check_buffer_timeout(now); }
             // The Vita drops sockets when it sleeps; detect the jump and
             // re-establish the session without involving the UI.
             if gap > SUSPEND_GAP_MS {
@@ -1479,11 +1510,22 @@ impl Engine {
                 .unwrap_or_else(|| username.clone());
         }
 
-        let message = if premium {
-            String::new()
+        self.audius_mode = !premium;
+        if self.audius_mode {
+            // Disconnect the Spotify player before using the independent audio port.
+            if let Some(player) = self.player.take() { player.stop(); }
+            if let Some(spirc) = self.spirc.take() { let _ = spirc.shutdown(); }
+            if let Some(done) = self.spirc_done.take() {
+                let _ = tokio::time::timeout(Duration::from_secs(3), done).await;
+            }
+            self.player_events = None;
+            crate::ad_filter::reset();
+            log::info!("Audio provider: Audius (Spotify Free)");
         } else {
-            "Free account: browsing enabled; playback depends on Spotify authorization.".to_string()
-        };
+            log::info!("Audio provider: Spotify (Premium)");
+        }
+        let message = if premium { String::new() }
+            else { "Free account: music provided by Audius.".to_string() };
 
         self.backend.set_auth(|auth| {
             auth.status = VAM_AUTH_LOGGED_IN;
@@ -1554,6 +1596,8 @@ impl Engine {
     }
 
     async fn teardown(&mut self) {
+        self.audius_player.stop();
+        self.audius_mode = false;
         self.buffering_since = None;
         self.buffering_timed_out = false;
         crate::ad_filter::reset();
@@ -1591,6 +1635,8 @@ impl Engine {
         if self.shutting_down {
             return;
         }
+        self.audius_player.stop();
+        self.audius_mode = false;
         crate::ad_filter::reset();
         self.phase = Phase::WaitingForCredentials;
         self.player = None;
