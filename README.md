@@ -4,7 +4,7 @@ A homebrew Spotify client for the PS Vita. It streams and plays music on the
 Vita itself through [librespot](https://github.com/librespot-org/librespot),
 shows up as a Spotify Connect device in the official apps, and has a touch and
 button UI laid out like Spotify's own (sidebar, shelves, Now Playing) with its
-own branding. **Spotify Premium is required.**
+own branding. **Experimental fork:** Free accounts can browse and submit playback commands, but Spotify controls access to audio. Premium may still be required. No subscription is spoofed and ad-free playback is not guaranteed.
 
 > Unofficial and not affiliated with Spotify. librespot and the internal
 > endpoints used here are Spotify's private protocol, which breaks Spotify's
@@ -248,3 +248,7 @@ uploads)`).
   [Noto Sans CJK](https://github.com/notofonts/noto-cjk) (SIL OFL,
   `assets/fonts/LICENSE-NotoSansCJK.txt`).
 - SDL2, SDL2_ttf and SDL2_image (zlib licence), built with VitaSDK.
+
+## Experimental Free account mode
+
+This branch removes the frontend-only Premium screen and redundant local checks on play/queue commands. The actual account type and Spotify's server-side authorization remain unchanged. This does not provide Premium audio keys, remove server-side advertising, or guarantee unlimited skips. Check `ux0:data/VitaSpot/vam.log` for track availability and audio-key errors. QR pairing and Connect fallback remain available.
