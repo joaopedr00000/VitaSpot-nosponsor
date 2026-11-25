@@ -3,6 +3,8 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <stdarg.h>
 
 #include "gfx/images.h"
 #include "gfx/text.h"
@@ -13,6 +15,57 @@
 #include "theme.h"
 
 app A;
+
+/* Independent frontend diagnostic, using VitaSDK's C stdio rather than Rust.
+ * No credentials, track identifiers or raw server response bodies are stored. */
+static FILE *g_ui_log;
+static int g_ui_log_error;
+static int g_backend_log_status;
+
+static void ui_diagnostic(const char *format, ...)
+{
+    if (!g_ui_log) return;
+    va_list args;
+    va_start(args, format);
+    int rc = vfprintf(g_ui_log, format, args);
+    va_end(args);
+    if (rc < 0 || fputc('\n', g_ui_log) == EOF || fflush(g_ui_log) != 0) {
+        g_ui_log_error = errno ? errno : 1;
+        fclose(g_ui_log);
+        g_ui_log = NULL;
+    }
+}
+
+static void probe_backend_log(void)
+{
+    const char *names[] = {"vam-diagnostic.log", "vam.log"};
+    g_backend_log_status = 0;
+    for (int i = 0; i < 2; i++) {
+        char path[512], line[256];
+        snprintf(path, sizeof(path), "%s%s", platform_data_dir(), names[i]);
+        FILE *f = fopen(path, "r");
+        if (!f) {
+            ui_diagnostic("backend probe %s: fopen errno=%d", names[i], errno);
+            continue;
+        }
+        if (fgets(line, sizeof(line), f) && strstr(line, "backend diagnostic revision")) {
+            g_backend_log_status = i + 1;
+            fclose(f);
+            break;
+        }
+        fclose(f);
+        ui_diagnostic("backend probe %s: diagnostic marker missing", names[i]);
+    }
+    ui_diagnostic("backend log status=%d", g_backend_log_status);
+}
+
+const char *app_diagnostic_status(void)
+{
+    if (g_ui_log_error) return "Could not write vam-ui.log";
+    if (g_backend_log_status == 1) return "Backend log: vam-diagnostic.log";
+    if (g_backend_log_status == 2) return "Backend log: vam.log (fallback)";
+    return "Backend log missing; send vam-ui.log";
+}
 
 #define PENDING_SAVES 16
 static struct { uint32_t req; char uri[VAM_URI_MAX]; bool prev; } g_saves[PENDING_SAVES];
@@ -483,16 +536,21 @@ static void handle_vam_event(vam_event *ev)
     case VAM_EV_AUTH_CHANGED: {
         int before = A.auth.status;
         vam_get_auth_state(&A.auth);
+        ui_diagnostic("auth status=%d premium=%d", A.auth.status, A.auth.is_premium);
         if (before == VAM_AUTH_LOGGED_IN && A.auth.status != VAM_AUTH_LOGGED_IN) {
             reset_stacks();
             lyrics_reset();
         }
         break;
     }
-    case VAM_EV_PLAYER_CHANGED:
+    case VAM_EV_PLAYER_CHANGED: {
+        int before = A.player.playback;
         vam_get_player_state(&A.player);
+        if (before != A.player.playback)
+            ui_diagnostic("playback state=%d active=%d", A.player.playback, A.player.is_active_device);
         A.have_player = true;
         break;
+    }
     case VAM_EV_PAGE: {
         bool more = false;
         view *v = find_view_by_req(ev->request_id, &more);
@@ -540,6 +598,9 @@ static void handle_vam_event(vam_event *ev)
             app_request_view(&A.stacks[TAB_LIBRARY][0]);
         break;
     case VAM_EV_ERROR:
+        ui_diagnostic("backend error event result=%d", ev->result);
+        app_toast(ev->message);
+        break;
     case VAM_EV_TOAST:
         app_toast(ev->message);
         break;
@@ -575,10 +636,20 @@ bool app_init(SDL_Window *w, SDL_Renderer *r)
        full-scale tracks clip the Vita's speaker above ~80% volume. */
     cfg.initial_volume = platform_is_vita() ? 65535 : 52000;
     cfg.normalize_volume = 1;
+    if (platform_is_vita()) {
+        char path[512];
+        snprintf(path, sizeof(path), "%svam-ui.log", cfg.data_dir);
+        g_ui_log = fopen(path, "w");
+        g_ui_log_error = g_ui_log ? 0 : (errno ? errno : 1);
+        ui_diagnostic("VitaSpot UI " VAM_APP_VERSION);
+        ui_diagnostic("data directory: %s", cfg.data_dir);
+    }
     vam_result res = vam_init(&cfg);
+    ui_diagnostic("vam_init result=%d", res);
     if (res != VAM_OK)
         SDL_Log("vam_init failed: %d", res);
     vam_log("VitaSpot " VAM_APP_VERSION);
+    if (platform_is_vita()) probe_backend_log();
     vam_get_auth_state(&A.auth);
     vam_get_player_state(&A.player);
     return true;
@@ -591,6 +662,8 @@ void app_shutdown(void)
             view_free(&A.stacks[t][d]);
     prefs_flush();
     vam_shutdown();
+    ui_diagnostic("shutdown complete");
+    if (g_ui_log) { fclose(g_ui_log); g_ui_log = NULL; }
 }
 
 static void global_buttons(void)
