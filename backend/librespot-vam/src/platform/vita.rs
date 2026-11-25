@@ -498,6 +498,9 @@ fn audio_thread(port: c_int, ring: Arc<(Mutex<RingState>, Condvar)>, stop: Arc<A
             started = true;
             condvar.notify_all();
         }
+        // Preserve the playback clock and the user's hardware volume; silence
+        // only this application's PCM while an explicit ad marker is active.
+        if crate::ad_filter::muted() { buffer.fill(0); }
         let rc = unsafe { sceAudioOutOutput(port, buffer.as_ptr() as *const c_void) };
         if rc < 0 {
             log::error!("sceAudioOutOutput failed: {rc:#x}");
