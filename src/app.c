@@ -70,6 +70,8 @@ const char *app_diagnostic_status(void)
 #define PENDING_SAVES 16
 static struct { uint32_t req; char uri[VAM_URI_MAX]; bool prev; } g_saves[PENDING_SAVES];
 static uint32_t g_focus_before_overlay;
+static bool g_addons_open;
+static uint32_t g_addons_focus;
 static float g_edit_changed_at = -1;
 
 /* ------------------------------------------------------------------------ */
@@ -666,8 +668,76 @@ void app_shutdown(void)
     if (g_ui_log) { fclose(g_ui_log); g_ui_log = NULL; }
 }
 
+static void addons_set_open(bool open)
+{
+    if (open == g_addons_open) return;
+    if (open) g_addons_focus = ui_focus();
+    g_addons_open = open;
+    ui_reset_focus_list();
+    ui_set_focus(open ? ui_id("addons.filter") : g_addons_focus);
+}
+
+static bool addons_row(uint32_t id, rectf r, const char *label, const char *value, bool enabled)
+{
+    ui_res res = ui_item(id, r, 0);
+    if (res.focused || res.pressed)
+        gfx_rrect(r, 8, rgb(C_SURFACE_HI2));
+    text_draw_vc(label, r.x + 16, r.y + r.h / 2, FS_M, FW_REGULAR,
+                 rgb(C_TEXT), r.w - (value ? 160 : 32));
+    if (value)
+        text_draw_aligned(value, r.x + r.w - 16, r.y + (r.h - text_line_height(FS_M)) / 2,
+                          FS_M, FW_BOLD, rgb(enabled ? C_ACCENT : C_SUBTEXT), 0, ALIGN_RIGHT);
+    if (res.focused) draw_focus_ring(r, 8);
+    return res.clicked;
+}
+
+static void draw_addons(void)
+{
+    const float w = 510, h = 270;
+    float x = (SCREEN_W - w) / 2, y = (SCREEN_H - h) / 2;
+    gfx_rect(rect(0, 0, SCREEN_W, SCREEN_H), rgba(0x000000, 176));
+    gfx_shadow(rect(x, y, w, h), 14, 12, 120);
+    gfx_rrect(rect(x, y, w, h), 14, rgb(C_SURFACE_HI));
+    text_draw(tr("Add-ons"), x + 22, y + 17, FS_XL, FW_BOLD, rgb(C_TEXT), w - 44);
+    text_draw(tr("Changes apply immediately."), x + 22, y + 47, FS_S, FW_REGULAR,
+              rgb(C_SUBTEXT), w - 44);
+    gfx_rect(rect(x + 14, y + 78, w - 28, 1), rgb(C_DIVIDER));
+    bool enabled = vam_ad_filter_enabled() != 0;
+    if (addons_row(ui_id("addons.filter"), rect(x + 12, y + 84, w - 24, 54),
+                   tr("Ad blocker"), tr(enabled ? "Enabled" : "Disabled"), enabled)) {
+        int result = vam_set_ad_filter(enabled ? 0 : 1);
+        ui_diagnostic("ad filter toggle requested=%d result=%d actual=%d",
+                      enabled ? 0 : 1, result, vam_ad_filter_enabled());
+        if (result == VAM_OK)
+            app_toast(tr(enabled ? "Ad blocker disabled." : "Ad blocker enabled."));
+        else
+            app_toast(tr("Could not save ad blocker setting."));
+    }
+    if (addons_row(ui_id("addons.queue"), rect(x + 12, y + 140, w - 24, 54),
+                   tr("Queue"), NULL, false)) {
+        addons_set_open(false);
+        app_open_uri("vam:queue");
+        return;
+    }
+    if (addons_row(ui_id("addons.close"), rect(x + 12, y + 196, w - 24, 54),
+                   tr("Close"), NULL, false))
+        addons_set_open(false);
+}
+
 static void global_buttons(void)
 {
+    if (ui_btn(BTN_SELECT) && !A.typing) {
+        ui_consume(BTN_SELECT);
+        addons_set_open(!g_addons_open);
+        return;
+    }
+    if (g_addons_open) {
+        if (ui_btn(BTN_BACK)) {
+            ui_consume(BTN_BACK);
+            addons_set_open(false);
+        }
+        return;
+    }
     if (ui_btn(BTN_BACK)) {
         ui_consume(BTN_BACK);
         if (A.typing)
@@ -698,10 +768,6 @@ static void global_buttons(void)
         if (A.player.has_track)
             check(vam_next(), tr("skip"));
     }
-    if (ui_btn(BTN_SELECT)) {
-        ui_consume(BTN_SELECT);
-        app_open_uri("vam:queue");
-    }
 }
 
 static void draw_toast(void)
@@ -720,7 +786,7 @@ static void draw_toast(void)
 
 static void draw_main(void)
 {
-    bool overlay = A.np_open || A.sheet.open;
+    bool overlay = A.np_open || A.sheet.open || g_addons_open;
     ui_set_enabled(!overlay);
 
     rectf content = rect(CONTENT_X, CONTENT_Y, CONTENT_W, CONTENT_H);
@@ -748,11 +814,11 @@ static void draw_main(void)
     if (!A.sheet.open && A.sheet.anim < 0.01f) A.sheet.anim = 0;
 
     if (A.np_anim > 0) {
-        ui_set_enabled(A.np_open && !A.sheet.open);
+        ui_set_enabled(A.np_open && !A.sheet.open && !g_addons_open);
         screen_now_playing();
     }
     if (A.sheet.anim > 0) {
-        ui_set_enabled(A.sheet.open);
+        ui_set_enabled(A.sheet.open && !g_addons_open);
         screen_sheet();
     }
     ui_set_enabled(true);
@@ -794,10 +860,12 @@ void app_frame(float dt)
     gfx_clear(rgb(C_BG));
 
     if (A.auth.status != VAM_AUTH_LOGGED_IN) {
+        addons_set_open(false);
         screen_login();
     } else {
         global_buttons();
         draw_main();
+        if (g_addons_open) draw_addons();
     }
     draw_toast();
     /* Desktop has no backlight: shade the window instead. */
