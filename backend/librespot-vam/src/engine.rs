@@ -853,13 +853,21 @@ impl Engine {
                     state.seq = state.seq.wrapping_add(1);
                 });
             }
-            PlayerEvent::Playing { position_ms, .. }
-            | PlayerEvent::PositionCorrection { position_ms, .. } => {
+            PlayerEvent::Playing { position_ms, .. } => {
+                log::info!("player confirmed playback at {position_ms} ms");
                 self.buffering_since = None;
                 self.buffering_timed_out = false;
                 self.unavailable_in_a_row = 0;
                 self.backend.set_player(move |state| {
                     state.playback = VAM_PLAYBACK_PLAYING;
+                    state.position_ms = position_ms;
+                    state.position_timestamp_ms = now_ms_inner();
+                    state.seq = state.seq.wrapping_add(1);
+                });
+            }
+            PlayerEvent::PositionCorrection { position_ms, .. } => {
+                // A clock correction is not proof that audio has started.
+                self.backend.set_player(move |state| {
                     state.position_ms = position_ms;
                     state.position_timestamp_ms = now_ms_inner();
                     state.seq = state.seq.wrapping_add(1);
@@ -910,7 +918,8 @@ impl Engine {
                 });
             }
             PlayerEvent::Unavailable { track_id, .. } => {
-                log::warn!("track unavailable: {}", track_id.to_uri().unwrap_or_default());
+                log::warn!("track unavailable: {} (premium={})", track_id.to_uri().unwrap_or_default(), self.backend.auth_snapshot().is_premium);
+                log::logger().flush();
                 self.unavailable_in_a_row += 1;
                 if self.unavailable_in_a_row == 1 {
                     self.backend.emit_error("Spotify could not load this track. Check vam.log for the cause.");
@@ -1206,6 +1215,7 @@ impl Engine {
         log::warn!("playback buffering timeout: premium={} active={} context={:?} track={:?}",
             auth.is_premium, self.last_snapshot.is_active,
             self.last_snapshot.context_uri, self.last_snapshot.track_uri);
+        log::logger().flush();
         if let Some(spirc) = &self.spirc {
             if let Err(e) = spirc.pause() {
                 log::warn!("pause after buffering timeout failed: {e}");
@@ -1494,7 +1504,7 @@ impl Engine {
         });
 
         log::info!(
-            "logged in as {username:?}, display name {display_name:?} (premium: {premium}, product: {product:?})"
+            "account authorized for login (premium: {premium}, product: {product:?})"
         );
         self.apply_snapshot(true);
         Ok(())
