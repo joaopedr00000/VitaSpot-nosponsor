@@ -59,6 +59,7 @@ unsafe fn init_backend(
         normalize_volume: config.normalize_volume != 0,
         audio_cache_bytes: audio_cache_mb as u64 * 1024 * 1024,
     };
+    crate::ad_filter::configure(!std::path::Path::new(&cfg.path("disable_ad_filter")).exists());
     Ok(Backend::new(cfg))
 }
 
@@ -163,6 +164,39 @@ pub unsafe extern "C" fn vam_log(message: *const c_char) {
     if !message.is_empty() {
         log::info!(target: "vam_ui", "{message}");
     }
+}
+
+/// Read the actual filter state, not a separate UI preference.
+#[no_mangle]
+pub extern "C" fn vam_ad_filter_enabled() -> i32 {
+    crate::ad_filter::enabled() as i32
+}
+
+/// Toggle the existing local filter and persist the legacy marker file.
+#[no_mangle]
+pub extern "C" fn vam_set_ad_filter(enabled: i32) -> i32 {
+    if enabled != 0 && enabled != 1 {
+        return VAM_ERR_INVALID_ARG;
+    }
+    let Some(backend) = backend() else {
+        return VAM_ERR_UNKNOWN;
+    };
+    let path = backend.config.path("disable_ad_filter");
+    let result = if enabled == 0 {
+        std::fs::File::create(&path).map(|_| ())
+    } else {
+        match std::fs::remove_file(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        }
+    };
+    if let Err(e) = result {
+        log::warn!("ad filter: could not save preference: {e}");
+        return VAM_ERR_UNKNOWN;
+    }
+    crate::ad_filter::configure(enabled != 0);
+    log::logger().flush();
+    VAM_OK
 }
 
 /// Non-blocking. Returns 1 and fills `*out` when an event was queued.
