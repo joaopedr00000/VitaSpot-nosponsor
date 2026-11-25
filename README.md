@@ -48,9 +48,10 @@ own branding. **Spotify Premium is required.**
 ## Installing and signing in
 
 1. Install `VitaSpot.vpk` with VitaShell.
-2. Connect the Vita to Wi-Fi and start VitaSpot. It shows a login screen and
-   advertises itself as **PS Vita** on your network.
-3. Open Spotify on a phone or PC on the **same Wi-Fi**, open the device picker
+2. Connect the Vita to Wi-Fi and start VitaSpot. On the experimental QR pairing build, wait for a pairing code, scan the QR with your phone, enter the displayed code at https://spotify.com/pair and approve. The Vita polls Spotify directly; no PC, local discovery or password entry on the Vita is required. The flow depends on Spotify enabling device authorization for the existing client identity.
+
+   Alternatively, VitaSpot advertises itself as **PS Vita** on your network.
+3. For Spotify Connect fallback, open Spotify on a phone or PC on the **same Wi-Fi**, open the device picker
    (the speaker icon) and choose **PS Vita**. The Vita signs in and remembers
    the account.
 
