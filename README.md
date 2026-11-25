@@ -252,3 +252,7 @@ uploads)`).
 ## Experimental Free account mode
 
 This branch removes the frontend-only Premium screen and redundant local checks on play/queue commands. The actual account type and Spotify's server-side authorization remain unchanged. This does not provide Premium audio keys, remove server-side advertising, or guarantee unlimited skips. Check `ux0:data/VitaSpot/vam.log` for track availability and audio-key errors. QR pairing and Connect fallback remain available.
+
+## Experimental native ad filter
+
+The test branch filters dedicated ad image hosts and locally silences explicitly marked ads on Vita without changing system volume. See [the compatibility review](docs/ad-filter-research.md) for scope, sources, tests and limitations. To disable the filter, create `ux0:data/VitaSpot/disable_ad_filter` and restart. This does not unlock Premium or guarantee uninterrupted playback.
