@@ -692,6 +692,15 @@ void vam_shutdown(void)
 
 uint64_t vam_now_ms(void) { return now_ms(); }
 
+static int32_t g_mock_ad_filter = 1;
+int32_t vam_ad_filter_enabled(void) { return g_mock_ad_filter; }
+vam_result vam_set_ad_filter(int32_t enabled)
+{
+    if (enabled != 0 && enabled != 1) return VAM_ERR_INVALID_ARG;
+    g_mock_ad_filter = enabled;
+    return VAM_OK;
+}
+
 void vam_log(const char *message)
 {
     if (message && *message)
