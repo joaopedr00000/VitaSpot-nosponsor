@@ -107,7 +107,7 @@ void screen_login(void)
     }
     text_draw_aligned(status, SCREEN_W / 2.0f, 172, FS_L, FW_BOLD, sc, 0, ALIGN_CENTER);
     if (a->message[0])
-        text_draw_aligned(tr(a->message), SCREEN_W / 2.0f, 202, FS_S, FW_REGULAR, rgb(C_SUBTEXT), 700, ALIGN_CENTER);
+        text_draw_aligned(tr_message(a->message), SCREEN_W / 2.0f, 202, FS_S, FW_REGULAR, rgb(C_SUBTEXT), 700, ALIGN_CENTER);
 
     rectf card = rect(160, 236, 640, 176);
     gfx_rrect(card, 12, rgba(0x000000, 110));
