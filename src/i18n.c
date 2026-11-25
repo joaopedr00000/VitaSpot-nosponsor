@@ -7,6 +7,10 @@
 #include <limits.h>
 #include "vam_backend.h"
 static const char *const messages[][4] = {
+    {"Could not write vam-ui.log", "Falha ao gravar vam-ui.log", "No se pudo escribir vam-ui.log", "Impossible d’écrire vam-ui.log"},
+    {"Backend log: vam-diagnostic.log", "Log do backend: vam-diagnostic.log", "Registro: vam-diagnostic.log", "Journal : vam-diagnostic.log"},
+    {"Backend log: vam.log (fallback)", "Log do backend: vam.log (alternativo)", "Registro: vam.log (alternativo)", "Journal : vam.log (secours)"},
+    {"Backend log missing; send vam-ui.log", "Log do backend ausente; envie vam-ui.log", "Falta el registro; envía vam-ui.log", "Journal absent ; envoyez vam-ui.log"},
     {"Playback command failed.", "Falha no comando de reprodução.", "Falló el comando de reproducción.", "Échec de la commande de lecture."},
     {"Sign-in failed.", "Falha ao entrar.", "No se pudo iniciar sesión.", "Échec de connexion."},
     {"Spotify request failed.", "Falha na solicitação ao Spotify.", "Falló la solicitud a Spotify.", "Échec de la requête Spotify."},
