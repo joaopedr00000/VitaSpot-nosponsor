@@ -8,6 +8,7 @@
 
 mod abi;
 mod engine;
+mod device_login;
 mod ffi;
 mod images;
 mod internal;
