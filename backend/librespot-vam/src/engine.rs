@@ -173,6 +173,7 @@ impl Engine {
     async fn new(shared: Arc<Shared>, commands: UnboundedReceiver<Command>) -> Self {
         let backend = shared.backend.clone();
         let config = backend.config.clone();
+        crate::ad_filter::configure(!std::path::Path::new(&config.path("disable_ad_filter")).exists());
 
         // Make sure the directory tree exists before any worker touches it.
         let _ = std::fs::create_dir_all(&config.data_dir);
@@ -920,6 +921,7 @@ impl Engine {
             return;
         };
         let snapshot = spirc.snapshot();
+        crate::ad_filter::update(&snapshot.track_uri, &snapshot.track_metadata, snapshot.is_active && (snapshot.is_playing || snapshot.is_buffering));
         if !force && !snapshot_changed(&snapshot, &self.last_snapshot) {
             return;
         }
@@ -1490,6 +1492,7 @@ impl Engine {
     }
 
     async fn teardown(&mut self) {
+        crate::ad_filter::reset();
         log::info!("tearing down backend");
         if let Some(player) = self.player.take() {
             player.stop();
@@ -1524,6 +1527,7 @@ impl Engine {
         if self.shutting_down {
             return;
         }
+        crate::ad_filter::reset();
         self.phase = Phase::WaitingForCredentials;
         self.player = None;
         self.player_events = None;
