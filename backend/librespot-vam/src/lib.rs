@@ -7,6 +7,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod abi;
+mod ad_filter;
 mod engine;
 mod device_login;
 mod ffi;
