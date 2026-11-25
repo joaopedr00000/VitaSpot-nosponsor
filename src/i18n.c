@@ -7,6 +7,11 @@
 #include <limits.h>
 #include "vam_backend.h"
 static const char *const messages[][4] = {
+    {"Test local audio", "Testar áudio local", "Probar audio local", "Tester l’audio local"},
+    {"Stop playback before testing audio.", "Pare a reprodução antes do teste.", "Detén la reproducción antes de la prueba.", "Arrêtez la lecture avant le test."},
+    {"Playing local AAC test tone.", "Reproduzindo tom AAC de teste.", "Reproduciendo tono AAC de prueba.", "Lecture du son AAC de test."},
+    {"Audio test finished. Did you hear the tone?", "Teste concluído. Você ouviu o tom?", "Prueba finalizada. ¿Oíste el tono?", "Test terminé. Avez-vous entendu le son ?"},
+    {"Audio test is available in Free mode only.", "Teste disponível apenas no modo Free.", "Prueba disponible solo en modo Free.", "Test disponible uniquement en mode Free."},
     {"Free account: Spotify library, alternate audio source.", "Conta Free: biblioteca Spotify, áudio de fonte alternativa.", "Cuenta Free: biblioteca Spotify, audio de fuente alternativa.", "Compte Free : bibliothèque Spotify, autre source audio."},
     {"Free audio source connection failed.", "Falha na conexão com a fonte de áudio Free.", "Falló la conexión con la fuente de audio Free.", "Connexion à la source audio Free impossible."},
     {"No matching public recording found.", "Nenhuma gravação pública correspondente encontrada.", "No se encontró una grabación pública equivalente.", "Aucun enregistrement public correspondant trouvé."},
@@ -26,10 +31,10 @@ static const char *const messages[][4] = {
     {"Ad blocker disabled.", "Bloqueador de anúncios desativado.", "Bloqueador de anuncios desactivado.", "Bloqueur de publicités désactivé."},
     {"Ad blocker enabled.", "Bloqueador de anúncios ativado.", "Bloqueador de anuncios activado.", "Bloqueur de publicités activé."},
     {"Could not save ad blocker setting.", "Não foi possível salvar a opção de bloqueio.", "No se pudo guardar el ajuste de bloqueo.", "Impossible d’enregistrer le réglage du blocage."},
-    {"Could not write vam-ui.log", "Falha ao gravar vam-ui.log", "No se pudo escribir vam-ui.log", "Impossible d’écrire vam-ui.log"},
-    {"Backend log: vam-diagnostic.log", "Log do backend: vam-diagnostic.log", "Registro: vam-diagnostic.log", "Journal : vam-diagnostic.log"},
-    {"Backend log: vam.log (fallback)", "Log do backend: vam.log (alternativo)", "Registro: vam.log (alternativo)", "Journal : vam.log (secours)"},
-    {"Backend log missing; send vam-ui.log", "Log do backend ausente; envie vam-ui.log", "Falta el registro; envía vam-ui.log", "Journal absent ; envoyez vam-ui.log"},
+    {"Could not write vam-ui-014.log", "Falha ao gravar vam-ui-014.log", "No se pudo escribir vam-ui-014.log", "Impossible d’écrire vam-ui-014.log"},
+    {"Backend log: vam-audio-014.log", "Log do backend: vam-audio-014.log", "Registro: vam-audio-014.log", "Journal : vam-audio-014.log"},
+    {"Backend log: vam-audio-014-fallback.log", "Log do backend: vam-audio-014-fallback.log", "Registro: vam-audio-014-fallback.log", "Journal : vam-audio-014-fallback.log"},
+    {"Backend log missing; send vam-ui-014.log", "Log do backend ausente; envie vam-ui-014.log", "Falta el registro; envía vam-ui-014.log", "Journal absent ; envoyez vam-ui-014.log"},
     {"Playback command failed.", "Falha no comando de reprodução.", "Falló el comando de reproducción.", "Échec de la commande de lecture."},
     {"Sign-in failed.", "Falha ao entrar.", "No se pudo iniciar sesión.", "Échec de connexion."},
     {"Spotify request failed.", "Falha na solicitação ao Spotify.", "Falló la solicitud a Spotify.", "Échec de la requête Spotify."},
