@@ -17,7 +17,7 @@ typedef enum btn {
     BTN_L,         /* previous track                          */
     BTN_R,         /* next track                              */
     BTN_START,     /* toggle Now Playing                      */
-    BTN_SELECT,    /* Add-ons menu (filter and queue)          */
+    BTN_SELECT,    /* queue                                   */
     BTN_COUNT
 } btn;
 
