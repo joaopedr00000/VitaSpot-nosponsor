@@ -113,11 +113,12 @@ impl FreePlayer {
                     });
                 }
                 log::info!("Free playback: Spotify metadata selected, resolving alternate audio");
-                let audio = free_source::resolve(&shared.backend, &selected).await?;
+                let audio = tokio::time::timeout(Duration::from_secs(90), free_source::resolve(&shared.backend, &selected)).await
+                    .map_err(|_| { log::warn!("Free source: overall resolution timeout"); free_source::NETWORK })??;
                 if control.stopped() { return Ok(()); }
                 let s = shared.clone();
                 let c = control.clone();
-                tokio::task::spawn_blocking(move || decode(&s, &c, &output, audio))
+                tokio::task::spawn_blocking(move || decode(&s, &c, &output, audio, false))
                     .await.map_err(|_| free_source::AUDIO_ERROR)?
             }.await;
             if !control.stopped() {
@@ -133,6 +134,36 @@ impl FreePlayer {
                 log::logger().flush();
                 if completed { shared.backend.send_command(crate::engine::Command::FreeEnded(generation)); }
             }
+        }));
+    }
+    /// Local AAC test; no network requests or changes to Spotify metadata.
+    pub fn selftest(&mut self, shared: Arc<Shared>) {
+        if shared.backend.player_snapshot().playback != VAM_PLAYBACK_STOPPED
+            || self.task.as_ref().is_some_and(|t| !t.is_finished()) {
+            shared.backend.emit_toast("Stop playback before testing audio.");
+            return;
+        }
+        self.stop();
+        let c = Arc::new(Control { seek: AtomicU32::new(NO_SEEK), ..Default::default() });
+        self.control = Some(c.clone());
+        let output = self.output.clone();
+        self.task = Some(tokio::spawn(async move {
+            shared.backend.emit_toast("Playing local AAC test tone.");
+            log::info!("SELFTEST AAC: starting local 48kHz mono fixture");
+            let file = TempAudio(std::path::PathBuf::from(shared.backend.config.path(&format!("tmp/free-audio-test-{}.m4a", shared.backend.next_request_id()))));
+            let result = if std::fs::write(&file.0, include_bytes!("../tests/fixtures/free-tone.m4a")).is_ok() {
+                let s = shared.clone();
+                let ctl = c.clone();
+                tokio::task::spawn_blocking(move || decode(&s, &ctl, &output, file, true))
+                    .await.unwrap_or(Err(free_source::AUDIO_ERROR))
+            } else { Err(free_source::FILE_ERROR) };
+            if !c.stopped() {
+                match result {
+                    Ok(()) => { log::info!("SELFTEST AAC: PCM submitted; verify tone was audible"); shared.backend.emit_toast("Audio test finished. Did you hear the tone?"); }
+                    Err(e) => { log::warn!("SELFTEST AAC: failed: {e}"); shared.backend.emit_error(e); }
+                }
+            }
+            log::logger().flush();
         }));
     }
     pub fn pause(&self) {
@@ -203,7 +234,7 @@ impl Resampler {
         out
     }
 }
-fn decode(shared: &Shared, control: &Control, output: &Mutex<()>, audio: TempAudio) -> Result<()> {
+fn decode(shared: &Shared, control: &Control, output: &Mutex<()>, audio: TempAudio, diagnostic: bool) -> Result<()> {
     crate::platform::lower_current_thread_priority();
     let _exclusive = output.lock().unwrap_or_else(|e| e.into_inner());
     if control.stopped() { return Ok(()); }
@@ -216,18 +247,18 @@ fn decode(shared: &Shared, control: &Control, output: &Mutex<()>, audio: TempAud
     let id = track.id;
     let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default())
         .map_err(|e| { log::warn!("Free AAC decoder: {e}"); free_source::AUDIO_ERROR })?;
+    log::info!("Free audio: container and decoder initialized");
     let mut sink = crate::platform::make_sink();
     let mut converter = Converter::new(None);
     if let Err(e) = sink.start() { log::warn!("Free sink start: {e}"); let _ = sink.stop(); return Err(free_source::OUTPUT_ERROR); }
     let result = (|| {
         let mut resample = Resampler::default();
-        let mut sample_buf: Option<SampleBuffer<f64>> = None;
         let mut frames: u64 = 0;
         let mut last_update = 0;
         let mut playing = false;
         let mut paused = false;
         while !control.stopped() {
-            if control.paused.load(Ordering::Acquire) {
+            if !diagnostic && control.paused.load(Ordering::Acquire) {
                 if !paused {
                     sink.flush().map_err(|_| free_source::OUTPUT_ERROR)?;
                     control.update(shared, |s| { s.playback = VAM_PLAYBACK_PAUSED; s.position_ms = (frames*1000/44100) as u32; s.position_timestamp_ms = now_ms_inner(); });
@@ -235,12 +266,12 @@ fn decode(shared: &Shared, control: &Control, output: &Mutex<()>, audio: TempAud
                 }
                 std::thread::sleep(Duration::from_millis(50)); continue;
             }
-            let seek = control.seek.swap(NO_SEEK, Ordering::AcqRel);
+            let seek = if diagnostic { NO_SEEK } else { control.seek.swap(NO_SEEK, Ordering::AcqRel) };
             if seek != NO_SEEK {
                 let time = Time::new((seek/1000) as u64, (seek%1000) as f64/1000.0);
                 format.seek(SeekMode::Accurate, SeekTo::Time { time, track_id: Some(id) })
                     .map_err(|_| free_source::AUDIO_ERROR)?;
-                decoder.reset(); resample = Resampler::default(); sample_buf = None;
+                decoder.reset(); resample = Resampler::default();
                 frames = seek as u64 * 44100 / 1000;
                 sink.flush().map_err(|_| free_source::OUTPUT_ERROR)?;
                 playing = false;
@@ -260,11 +291,9 @@ fn decode(shared: &Shared, control: &Control, output: &Mutex<()>, audio: TempAud
             let channels = spec.channels.count();
             if !(1..=2).contains(&channels) || !(8000..=96000).contains(&spec.rate) { return Err(free_source::NO_FORMAT); }
             // Allocate for each packet's actual shape; no stale buffer capacity.
-            let mut buf = sample_buf.take().filter(|b| b.capacity() >= decoded.capacity()*channels)
-                .unwrap_or_else(|| SampleBuffer::<f64>::new(decoded.capacity() as u64, spec));
+            let mut buf = SampleBuffer::<f64>::new(decoded.capacity() as u64, spec);
             buf.copy_interleaved_ref(decoded);
             let mut pcm = resample.convert(buf.samples(), channels, spec.rate);
-            sample_buf = Some(buf);
             if pcm.is_empty() { continue; }
             if crate::platform::system_volume_step().is_none() {
                 let gain = shared.backend.player_snapshot().volume as f64 / 65535.0;
@@ -278,10 +307,10 @@ fn decode(shared: &Shared, control: &Control, output: &Mutex<()>, audio: TempAud
             if !playing || now.saturating_sub(last_update) >= 250 {
                 if !playing { log::info!("Free source: decoded AAC PCM submitted to audio sink ({} Hz, {channels} channels)", spec.rate); }
                 playing = true; last_update = now;
-                control.update(shared, |s| {
+                if !diagnostic { control.update(shared, |s| {
                     s.playback = VAM_PLAYBACK_PLAYING; s.position_ms = ((frames*1000/44100) as u32).min(s.track.duration_ms);
                     s.position_timestamp_ms = now; s.seq = s.seq.wrapping_add(1);
-                });
+                }); }
             }
         }
         Ok(())

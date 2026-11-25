@@ -38,7 +38,7 @@ static void ui_diagnostic(const char *format, ...)
 
 static void probe_backend_log(void)
 {
-    const char *names[] = {"vam-diagnostic.log", "vam.log"};
+    const char *names[] = {"vam-audio-014.log", "vam-audio-014-fallback.log"};
     g_backend_log_status = 0;
     for (int i = 0; i < 2; i++) {
         char path[512], line[256];
@@ -48,7 +48,7 @@ static void probe_backend_log(void)
             ui_diagnostic("backend probe %s: fopen errno=%d", names[i], errno);
             continue;
         }
-        if (fgets(line, sizeof(line), f) && strstr(line, "backend diagnostic revision")) {
+        if (fgets(line, sizeof(line), f) && strstr(line, "backend diagnostic revision 2")) {
             g_backend_log_status = i + 1;
             fclose(f);
             break;
@@ -61,10 +61,10 @@ static void probe_backend_log(void)
 
 const char *app_diagnostic_status(void)
 {
-    if (g_ui_log_error) return "Could not write vam-ui.log";
-    if (g_backend_log_status == 1) return "Backend log: vam-diagnostic.log";
-    if (g_backend_log_status == 2) return "Backend log: vam.log (fallback)";
-    return "Backend log missing; send vam-ui.log";
+    if (g_ui_log_error) return "Could not write vam-ui-014.log";
+    if (g_backend_log_status == 1) return "Backend log: vam-audio-014.log";
+    if (g_backend_log_status == 2) return "Backend log: vam-audio-014-fallback.log";
+    return "Backend log missing; send vam-ui-014.log";
 }
 
 #define PENDING_SAVES 16
@@ -599,6 +599,8 @@ static void handle_vam_event(vam_event *ev)
         break;
     case VAM_EV_ERROR:
         ui_diagnostic("backend error event result=%d", ev->result);
+        if (!A.auth.is_premium && (strstr(ev->message, "Free audio") || strstr(ev->message, "AAC") || strstr(ev->message, "public recording") || strstr(ev->message, "temporary audio")))
+            ui_diagnostic("audio error: %s", ev->message);
         app_toast(ev->message);
         break;
     case VAM_EV_TOAST:
@@ -638,7 +640,7 @@ bool app_init(SDL_Window *w, SDL_Renderer *r)
     cfg.normalize_volume = 1;
     if (platform_is_vita()) {
         char path[512];
-        snprintf(path, sizeof(path), "%svam-ui.log", cfg.data_dir);
+        snprintf(path, sizeof(path), "%svam-ui-014.log", cfg.data_dir);
         g_ui_log = fopen(path, "w");
         g_ui_log_error = g_ui_log ? 0 : (errno ? errno : 1);
         ui_diagnostic("VitaSpot UI " VAM_APP_VERSION);

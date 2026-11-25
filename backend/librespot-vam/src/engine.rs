@@ -386,7 +386,11 @@ impl Engine {
         if self.free_mode {
             match &command {
                 Command::Play { context, track, index } => {
-                    self.free_player.play(self.shared.clone(), context.clone(), track.clone(), *index);
+                    if context == "vam:audio-test" && track.is_empty() {
+                        self.free_player.selftest(self.shared.clone());
+                    } else {
+                        self.free_player.play(self.shared.clone(), context.clone(), track.clone(), *index);
+                    }
                     return true;
                 }
                 Command::Pause => { self.free_player.pause(); return true; }
@@ -404,6 +408,9 @@ impl Engine {
             }
         }
         match command {
+            Command::Play { ref context, .. } if context == "vam:audio-test" => {
+                self.backend.emit_toast("Audio test is available in Free mode only.");
+            }
             Command::Shutdown => {
                 self.shutting_down = true;
                 return false;

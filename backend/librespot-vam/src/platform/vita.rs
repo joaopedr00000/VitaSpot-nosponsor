@@ -286,7 +286,7 @@ pub fn init_logging(data_dir: &str) {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         let dir = data_dir.trim_end_matches('/');
-        let mut path = format!("{dir}/vam-diagnostic.log");
+        let mut path = format!("{dir}/vam-audio-014.log");
         let open = |p: &str| std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -295,7 +295,7 @@ pub fn init_logging(data_dir: &str) {
         let (file, primary_error) = match open(&path) {
             Ok(file) => (Some(file), None),
             Err(e) => {
-                path = format!("{dir}/vam.log");
+                path = format!("{dir}/vam-audio-014-fallback.log");
                 (open(&path).ok(), Some(e))
             }
         };
@@ -304,9 +304,9 @@ pub fn init_logging(data_dir: &str) {
         });
         let _ = log::set_logger(logger);
         log::set_max_level(log::LevelFilter::Info);
-        log::info!("VitaSpot backend diagnostic revision 1 (log: {path})");
+        log::info!("VitaSpot backend diagnostic revision 2 (log: {path})");
         if let Some(error) = primary_error {
-            log::warn!("Could not open diagnostic log; using legacy path: {error}");
+            log::warn!("Could not open diagnostic log; using alternate diagnostic path: {error}");
         }
         log::logger().flush();
 

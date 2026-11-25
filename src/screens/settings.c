@@ -271,7 +271,16 @@ void screen_settings(view *v)
 
     text_draw(tr("Audio"), x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
     y += 38;
-    y += audio_card(x, y, w) + 32;
+    y += audio_card(x, y, w) + 12;
+    if (A.auth.status == VAM_AUTH_LOGGED_IN && !A.auth.is_premium) {
+        const char *test = tr("Test local audio");
+        if (pill_button(ui_id("settings.audio.selftest"), test, x, y, false, NULL)) {
+            if (vam_play("vam:audio-test", NULL, 0) != VAM_OK)
+                app_toast(tr("Playback command failed."));
+        }
+        y += 50;
+    }
+    y += 20;
 
     text_draw(tr("About"), x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
     y += 38;
