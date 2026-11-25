@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "../app.h"
+#include "../i18n.h"
 #include "../gfx/images.h"
 #include "../gfx/text.h"
 #include "../lyrics.h"
@@ -199,7 +200,7 @@ void screen_sidebar(void)
         if (res.focused)
             gfx_rrect(r, 8, rgb(C_SURFACE_HI));
         gfx_icon(icons[i][active], r.x + r.w / 2, r.y + 23, 26, c);
-        text_draw_aligned(labels[i], r.x + r.w / 2, r.y + 40, FS_XS, active ? FW_BOLD : FW_REGULAR, c, r.w,
+        text_draw_aligned(tr(labels[i]), r.x + r.w / 2, r.y + 40, FS_XS, active ? FW_BOLD : FW_REGULAR, c, r.w,
                           ALIGN_CENTER);
         if (res.focused)
             draw_focus_ring(r, 8);
@@ -252,7 +253,7 @@ void screen_player_bar(void)
     gfx_rect(rect(0, y, SCREEN_W, PLAYER_H), rgb(C_BG_DEEP));
     gfx_rect(rect(0, y, SCREEN_W, 1), rgb(C_DIVIDER));
     if (!A.player.has_track) {
-        text_draw_vc("Pick something to play", 20, y + PLAYER_H / 2.0f, FS_S, FW_REGULAR, rgb(C_MUTED), 300);
+        text_draw_vc(tr("Pick something to play"), 20, y + PLAYER_H / 2.0f, FS_S, FW_REGULAR, rgb(C_MUTED), 300);
         return;
     }
     const vam_item *t = &A.player.track;
@@ -311,12 +312,12 @@ void screen_now_playing(void)
         app_set_now_playing(false);
     char from[64];
     const char *k = "";
-    if (strncmp(A.player.context_uri, "spotify:album:", 14) == 0) k = "ALBUM";
-    else if (strncmp(A.player.context_uri, "spotify:playlist:", 17) == 0) k = "PLAYLIST";
-    else if (strncmp(A.player.context_uri, "spotify:artist:", 15) == 0) k = "ARTIST";
-    else if (strstr(A.player.context_uri, "collection")) k = "YOUR LIBRARY";
+    if (strncmp(A.player.context_uri, "spotify:album:", 14) == 0) k = tr("ALBUM");
+    else if (strncmp(A.player.context_uri, "spotify:playlist:", 17) == 0) k = tr("PLAYLIST");
+    else if (strncmp(A.player.context_uri, "spotify:artist:", 15) == 0) k = tr("ARTIST");
+    else if (strstr(A.player.context_uri, "collection")) k = tr("YOUR LIBRARY");
     if (A.player.context_title[0]) {
-        snprintf(from, sizeof(from), k[0] ? "PLAYING FROM %s" : "PLAYING FROM", k);
+        snprintf(from, sizeof(from), k[0] ? tr("PLAYING FROM %s") : tr("PLAYING FROM"), k);
         text_draw_aligned(from, SCREEN_W / 2.0f, oy + 12, FS_XS, FW_REGULAR, rgb(C_TEXT), 500, ALIGN_CENTER);
         text_draw_aligned(A.player.context_title, SCREEN_W / 2.0f, oy + 32, FS_S, FW_BOLD, rgb(C_TEXT), 500,
                           ALIGN_CENTER);
@@ -392,9 +393,9 @@ void screen_now_playing(void)
 
     if (!A.player.is_active_device) {
         gfx_icon(ICON_DEVICE, x0 + 10, oy + 462, 20, rgb(C_ACCENT));
-        text_draw_vc("Playing on another device", x0 + 30, oy + 462, FS_S, FW_BOLD, rgb(C_ACCENT), w);
+        text_draw_vc(tr("Playing on another device"), x0 + 30, oy + 462, FS_S, FW_BOLD, rgb(C_ACCENT), w);
     }
 
-    text_draw_aligned("VitaSpot is an unofficial Spotify client.", SCREEN_W / 2.0f, oy + SCREEN_H - 28, FS_XS,
+    text_draw_aligned(tr("VitaSpot is an unofficial Spotify client."), SCREEN_W / 2.0f, oy + SCREEN_H - 28, FS_XS,
                       FW_REGULAR, rgb(C_MUTED), SCREEN_W - 40, ALIGN_CENTER);
 }
