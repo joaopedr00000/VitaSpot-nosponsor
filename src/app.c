@@ -225,7 +225,7 @@ void app_toast(const char *msg)
 {
     if (!msg || !*msg)
         return;
-    snprintf(A.toast, sizeof(A.toast), "%s", tr(msg));
+    snprintf(A.toast, sizeof(A.toast), "%s", tr_message(msg));
     A.toast_until = A.time + 2.6f;
 }
 
@@ -512,7 +512,7 @@ static void handle_vam_event(vam_event *ev)
         } else if (!v->page) {
             v->failed = true;
             snprintf(v->error, sizeof(v->error), "%s",
-                     ev->message[0] ? tr(ev->message) : tr("Something went wrong."));
+                     ev->message[0] ? tr_message(ev->message) : tr("Something went wrong."));
         }
         break;
     }
