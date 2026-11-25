@@ -107,6 +107,7 @@ impl Control {
 #[derive(Default)]
 pub struct LocalPlayer {
     current: Option<Arc<Control>>,
+    task: Option<tokio::task::JoinHandle<()>>,
     last_uri: String,
     pub catalog: Arc<Mutex<Vec<Item>>>,
     queue: Vec<Item>,
@@ -122,6 +123,7 @@ impl LocalPlayer {
             let _guard = control.publish.lock().unwrap_or_else(|e| e.into_inner());
             control.cancelled.store(true, Ordering::Release);
         }
+        if let Some(task) = self.task.take() { task.abort(); }
     }
     pub fn play(&mut self, backend: Arc<Backend>, uri: &str) {
         let catalog = self.catalog.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -154,7 +156,7 @@ impl LocalPlayer {
             state.seq = state.seq.wrapping_add(1);
         });
         log::info!("Audius playback requested: {id}");
-        tokio::spawn(async move {
+        self.task = Some(tokio::spawn(async move {
             let result = async {
                 let track = track(&id).await?;
                 control.update(&backend, |s| {
@@ -187,7 +189,7 @@ impl LocalPlayer {
                     backend.send_command(crate::engine::Command::AudiusEnded(generation));
                 }
             }
-        });
+        }));
     }
     pub fn ended(&mut self, backend: Arc<Backend>, generation: u64) {
         if generation == self.generation && self.index + 1 < self.queue.len() {
@@ -309,7 +311,10 @@ fn decode(backend: &Backend, control: &Control, output: &Mutex<()>, file: Tempor
     let mut sink = crate::platform::make_sink();
     let mut converter = Converter::new(None);
     let sink_error = |_| ApiError::unavailable("Audius audio output failed.");
-    sink.start().map_err(sink_error)?;
+    if let Err(error) = sink.start() {
+        let _ = sink.stop();
+        return Err(sink_error(error));
+    }
     let result = (|| {
         let mut position = 0;
         let mut playing = false;
@@ -362,4 +367,28 @@ fn decode(backend: &Backend, control: &Control, output: &Mutex<()>, file: Tempor
     })();
     let _ = sink.stop();
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn only_audius_track_ids() {
+        assert_eq!(id_from_uri("audius:track:Ab123"), Some("Ab123"));
+        assert_eq!(id_from_uri("spotify:track:Ab123"), None);
+        assert_eq!(id_from_uri("audius:track:../track"), None);
+    }
+    #[test]
+    fn catalog_does_not_include_explicitly_restricted_tracks() {
+        let public = serde_json::json!({"id":"Ab123","title":"Example","duration":60,"user":{"name":"Artist"}});
+        let track = item(&public).expect("public track");
+        assert_eq!(track.uri, "audius:track:Ab123");
+        assert_eq!(track.duration_ms, 60000);
+        let mut gated = public.clone();
+        gated["is_stream_gated"] = Value::Bool(true);
+        assert!(item(&gated).is_none());
+        let mut unavailable = public;
+        unavailable["access"] = serde_json::json!({"stream":false});
+        assert!(item(&unavailable).is_none());
+    }
 }
