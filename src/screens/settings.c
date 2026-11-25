@@ -8,6 +8,7 @@
 #include "../gfx/text.h"
 #include "../power.h"
 #include "../prefs.h"
+#include "../platform/platform.h"
 #include "../theme.h"
 
 /* Log out asks once more before it forgets the saved login. */
@@ -196,7 +197,7 @@ static float audio_card(float x, float y, float w)
 
 static float about_card(float x, float y, float w)
 {
-    rectf card = rect(x, y, w, 96);
+    rectf card = rect(x, y, w, platform_is_vita() ? 128 : 96);
     gfx_rrect(card, 8, rgb(C_SURFACE));
     text_draw("VitaSpot", card.x + 16, card.y + 20, FS_M, FW_BOLD, rgb(C_TEXT), card.w - 32);
     char version[64];
@@ -205,6 +206,9 @@ static float about_card(float x, float y, float w)
                       rgb(C_SUBTEXT), 0, ALIGN_RIGHT);
     text_draw(tr("An unofficial Spotify client for the PS Vita. Not affiliated with Spotify."), card.x + 16,
               card.y + 50, FS_S, FW_REGULAR, rgb(C_SUBTEXT), card.w - 32);
+    if (platform_is_vita())
+        text_draw(tr(app_diagnostic_status()), card.x + 16, card.y + 83, FS_S,
+                  FW_REGULAR, rgb(C_TEXT), card.w - 32);
     return card.h;
 }
 
