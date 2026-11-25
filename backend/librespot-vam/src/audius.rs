@@ -1,6 +1,6 @@
 //! Public Audius catalog and independent local playback for Spotify Free users.
 //! No Spotify credentials are sent to Audius. Only public playable tracks are used.
-use std::{fs::File, io::Write, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU32, Ordering}}, time::Duration};
+use std::{fs::File, io::Write, path::{Path, PathBuf}, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU32, Ordering}}, time::Duration};
 use librespot_playback::{convert::Converter, decoder::{AudioDecoder, AudioPacket, SymphoniaDecoder}};
 use serde_json::Value;
 use crate::{abi::*, model::{Item, Page, Section}, state::Backend, util::{copy_str, now_ms_inner}, webapi::ApiError};
@@ -107,6 +107,7 @@ impl Control {
 #[derive(Default)]
 pub struct LocalPlayer {
     current: Option<Arc<Control>>,
+    cache: Option<Arc<tokio::sync::Mutex<crate::audius_cache::Cache>>>,
     task: Option<tokio::task::JoinHandle<()>>,
     last_uri: String,
     pub catalog: Arc<Mutex<Vec<Item>>>,
@@ -117,6 +118,25 @@ pub struct LocalPlayer {
     output: Arc<Mutex<()>>,
 }
 impl LocalPlayer {
+    pub fn new(backend: &Backend) -> Self {
+        Self { cache: Some(Arc::new(tokio::sync::Mutex::new(crate::audius_cache::Cache::new(backend)))), ..Default::default() }
+    }
+    pub fn restore(&mut self, backend: &Backend) {
+        let Some(cache) = &self.cache else { return; };
+        let Ok(cache) = cache.try_lock() else { return; };
+        let Some(item) = cache.restored() else { return; };
+        self.last_uri = item.uri.clone();
+        self.queue = vec![item.clone()];
+        self.index = 0;
+        backend.set_player(|s| {
+            s.track = item.to_c(); s.has_track = 1; s.is_active_device = 1;
+            s.playback = VAM_PLAYBACK_STOPPED; s.position_ms = 0;
+            s.position_timestamp_ms = now_ms_inner();
+            copy_str(&mut s.context_title, "Audius"); s.context_uri.fill(0);
+            s.seq = s.seq.wrapping_add(1);
+        });
+        log::info!("Audius cache: restored current track without autoplay");
+    }
     pub fn stop(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         if let Some(control) = self.current.take() {
@@ -142,6 +162,8 @@ impl LocalPlayer {
             return;
         };
         self.stop();
+        if self.last_uri != uri { crate::audius_cache::Cache::clear_selection(&backend); }
+        let Some(cache) = self.cache.clone() else { backend.emit_error("Audius temporary file failed."); return; };
         self.last_uri = uri.to_string();
         let generation = self.generation;
         let control = Arc::new(Control { seek: AtomicU32::new(NO_SEEK), ..Default::default() });
@@ -166,11 +188,38 @@ impl LocalPlayer {
                     s.seq = s.seq.wrapping_add(1);
                 });
                 if control.cancelled() { return Ok(()); }
-                let file = download(&backend, &id, &control).await?;
+                let path = {
+                    // Only one download may reserve a disk slot at a time.
+                    let mut cache = cache.lock().await;
+                    if control.cancelled() { return Ok(()); }
+                    let path = if let Some(path) = cache.hit(&id) {
+                        path
+                    } else {
+                        let path = cache.reserve(&id).map_err(|e| {
+                            log::warn!("Audius cache reserve failed: {e}");
+                            ApiError::unavailable("Audius temporary file failed.")
+                        })?;
+                        let part = download(&id, &control, path).await?;
+                        let _publish = control.publish.lock().unwrap_or_else(|e| e.into_inner());
+                        if control.cancelled() { return Ok(()); }
+                        cache.commit(&id, &part.0).map_err(|e| {
+                            log::warn!("Audius cache commit failed: {e}");
+                            ApiError::unavailable("Audius temporary file failed.")
+                        })?
+                    };
+                    {
+                        let _publish = control.publish.lock().unwrap_or_else(|e| e.into_inner());
+                        if control.cancelled() { return Ok(()); }
+                        if let Err(e) = cache.mark_current(&track) {
+                            log::warn!("Audius cache current marker failed: {e}");
+                        }
+                    }
+                    path
+                };
                 if control.cancelled() { return Ok(()); }
                 let b = backend.clone();
                 let c = control.clone();
-                tokio::task::spawn_blocking(move || decode(&b, &c, &output, file))
+                tokio::task::spawn_blocking(move || decode(&b, &c, &output, &path))
                     .await.map_err(|_| ApiError::unavailable("Audius audio worker failed."))?
             }.await;
             if !control.cancelled() {
@@ -257,11 +306,11 @@ impl LocalPlayer {
     }
 }
 
-struct Temporary(String);
+struct Temporary(PathBuf);
 impl Drop for Temporary {
     fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); }
 }
-async fn download(backend: &Backend, id: &str, control: &Control) -> Result<Temporary, ApiError> {
+async fn download(id: &str, control: &Control, path: PathBuf) -> Result<Temporary, ApiError> {
     let mut response = client()?.get(format!("{API}/tracks/{id}/stream"))
         .query(&[("app_name", "VitaSpot")]).send().await
         .map_err(|_| ApiError::network("Audius connection failed."))?;
@@ -273,7 +322,7 @@ async fn download(backend: &Backend, id: &str, control: &Control) -> Result<Temp
     if !content_type.starts_with("audio/") && !content_type.starts_with("application/octet-stream") {
         return Err(ApiError::unavailable("Unsupported Audius audio format."));
     }
-    let temp = Temporary(backend.config.path(&format!("tmp/audius-{}-{}.mp3", now_ms_inner(), backend.next_request_id())));
+    let temp = Temporary(path);
     let mut file = File::create(&temp.0).map_err(|_| ApiError::unavailable("Audius temporary file failed."))?;
     let mut size = 0usize;
     while let Some(chunk) = response.chunk().await.map_err(|_| ApiError::network("Audius connection failed."))? {
@@ -282,6 +331,7 @@ async fn download(backend: &Backend, id: &str, control: &Control) -> Result<Temp
         if size > MAX_AUDIO { return Err(ApiError::unavailable("Audius track too large.")); }
         file.write_all(&chunk).map_err(|_| ApiError::unavailable("Audius temporary file failed."))?;
     }
+    file.sync_all().map_err(|_| ApiError::unavailable("Audius temporary file failed."))?;
     drop(file);
     if size == 0 && !control.cancelled() { return Err(ApiError::unavailable("Audius content unavailable.")); }
     log::info!("Audius received {size} audio bytes");
@@ -301,12 +351,12 @@ pub async fn image(url: &str) -> Result<Vec<u8>, ApiError> {
     Ok(bytes)
 }
 
-fn decode(backend: &Backend, control: &Control, output: &Mutex<()>, file: Temporary) -> Result<(), ApiError> {
+fn decode(backend: &Backend, control: &Control, output: &Mutex<()>, path: &Path) -> Result<(), ApiError> {
     crate::platform::lower_current_thread_priority();
     let _exclusive = output.lock().unwrap_or_else(|e| e.into_inner());
     if control.cancelled() { return Ok(()); }
     let err = |_| ApiError::unavailable("Unsupported Audius audio format.");
-    let input = File::open(&file.0).map_err(|_| ApiError::unavailable("Audius temporary file failed."))?;
+    let input = File::open(path).map_err(|_| ApiError::unavailable("Audius temporary file failed."))?;
     let mut decoder = SymphoniaDecoder::new_mp3_file(input).map_err(err)?;
     let mut sink = crate::platform::make_sink();
     let mut converter = Converter::new(None);
