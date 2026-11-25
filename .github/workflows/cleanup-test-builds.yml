@@ -20,37 +20,43 @@ jobs:
     if: github.repository == 'joaopedr00000/VitaSpot-nosponsor' && github.ref == 'refs/heads/test/qr-device-login'
     runs-on: ubuntu-24.04
     steps:
-      - name: Retain recent builds and known good artifacts
+      - name: Remove obsolete experimental workflow runs
         uses: actions/github-script@v7
         with:
           script: |
             const { owner, repo } = context.repo;
             const branch = 'test/qr-device-login';
             const runs = await github.paginate(
-              github.rest.actions.listWorkflowRuns,
-              { owner, repo, workflow_id: 'build-vpk.yml', branch, per_page: 100 }
+              github.rest.actions.listWorkflowRunsForRepo,
+              { owner, repo, branch, per_page: 100 }
             );
-            const completed = runs.filter(r =>
-              r.status === 'completed' &&
+            const scoped = runs.filter(r =>
               r.head_branch === branch &&
               r.head_repository?.full_name === owner + '/' + repo &&
               ['push', 'pull_request', 'workflow_dispatch'].includes(r.event)
-            ).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-            const keep = new Set([
-              45665342108, // validated translation VPK #63
-              45671429974, // diagnostic VPK #72
-              ...completed.slice(0, 5).map(r => r.id),
-              ...completed.filter(r => r.conclusion === 'success').slice(0, 3).map(r => r.id)
-            ]);
+            ).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id);
+            const builds = scoped.filter(r => r.path?.split('@')[0] === '.github/workflows/build-vpk.yml' || r.workflow_id === 430602110);
+            const keep = new Set([context.runId]);
+            if (builds[0]) keep.add(builds[0].id);
+            // Keep a working VPK as a fallback only if the newest build is not successful.
+            const latestGood = builds.find(r => r.status === 'completed' && r.conclusion === 'success');
+            if (latestGood) keep.add(latestGood.id);
             let deleted = 0;
-            for (const run of completed) {
-              if (keep.has(run.id)) continue;
-              await github.rest.actions.deleteWorkflowRun({ owner, repo, run_id: run.id });
-              deleted++;
-              core.info('Deleted old experimental build #' + run.run_number);
+            let failed = 0;
+            for (const run of scoped) {
+              if (run.status !== 'completed' || keep.has(run.id)) continue;
+              try {
+                await github.rest.actions.deleteWorkflowRun({ owner, repo, run_id: run.id });
+                deleted++;
+                core.info('Deleted ' + run.name + ' #' + run.run_number + ' (' + run.id + ')');
+              } catch (err) {
+                if (err.status === 404) continue;
+                failed++;
+                core.warning('Could not delete run ' + run.id + ': ' + err.message);
+              }
             }
-            await core.summary.addHeading('Experimental build cleanup')
-              .addRaw('Deleted: ' + deleted + '; preserved completed: ' +
-                completed.filter(r => keep.has(r.id)).length +
-                '. Active runs, other branches and releases untouched.')
+            await core.summary.addHeading('Experimental workflow cleanup')
+              .addRaw('Deleted: ' + deleted + '; failed: ' + failed + '; retained IDs: ' + [...keep].join(', ') +
+                '. Active runs, other branches, tags and releases untouched.')
               .write();
+            if (failed) core.setFailed('Some old workflow runs could not be deleted.');
