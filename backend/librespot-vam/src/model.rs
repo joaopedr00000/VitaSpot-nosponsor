@@ -3,7 +3,7 @@
 use crate::abi::*;
 use crate::util::copy_str;
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct Item {
     pub kind: i32,
     pub uri: String,

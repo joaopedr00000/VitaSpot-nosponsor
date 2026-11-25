@@ -271,7 +271,7 @@ void screen_player_bar(void)
     if (res.clicked)
         app_set_now_playing(true);
 
-    if (A.auth.is_premium && icon_button(ui_id("bar.like"), t->is_saved ? ICON_HEART : ICON_HEART_OUTLINE, 284, y + PLAYER_H / 2.0f,
+    if (icon_button(ui_id("bar.like"), t->is_saved ? ICON_HEART : ICON_HEART_OUTLINE, 284, y + PLAYER_H / 2.0f,
                     20, 48, t->is_saved ? rgb(C_ACCENT) : rgb(C_SUBTEXT)))
         app_toggle_saved(t->uri, t->is_saved);
 
@@ -381,7 +381,7 @@ void screen_now_playing(void)
         draw_focus_ring(artist_r, 4);
     if (ar.clicked && track->artist_uri[0])
         app_open_uri(track->artist_uri);
-    if (A.auth.is_premium && icon_button(ui_id("np.like"), track->is_saved ? ICON_HEART : ICON_HEART_OUTLINE, x0 + w - 14, oy + 186, 26,
+    if (icon_button(ui_id("np.like"), track->is_saved ? ICON_HEART : ICON_HEART_OUTLINE, x0 + w - 14, oy + 186, 26,
                     52, track->is_saved ? rgb(C_ACCENT) : rgb(C_TEXT)))
         app_toggle_saved(track->uri, track->is_saved);
 
@@ -396,6 +396,6 @@ void screen_now_playing(void)
         text_draw_vc(tr("Playing on another device"), x0 + 30, oy + 462, FS_S, FW_BOLD, rgb(C_ACCENT), w);
     }
 
-    text_draw_aligned(tr(A.auth.is_premium ? "VitaSpot is an unofficial Spotify client." : "Music provided by Audius."), SCREEN_W / 2.0f, oy + SCREEN_H - 28, FS_XS,
+    text_draw_aligned(tr("VitaSpot is an unofficial Spotify client."), SCREEN_W / 2.0f, oy + SCREEN_H - 28, FS_XS,
                       FW_REGULAR, rgb(C_MUTED), SCREEN_W - 40, ALIGN_CENTER);
 }

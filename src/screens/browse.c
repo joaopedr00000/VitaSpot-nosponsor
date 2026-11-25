@@ -46,7 +46,7 @@ void screen_home(view *v)
 
     ui_scroll_begin(&v->scroll, vp, v->content_h, AXIS_Y, true);
     float y = CONTENT_Y + 22 - v->scroll.pos;
-    text_draw(A.auth.is_premium ? greeting() : tr("Audius - Trending"), CONTENT_X + PAD, y, FS_XXL, FW_BOLD, rgb(C_TEXT), CONTENT_W - 2 * PAD);
+    text_draw(greeting(), CONTENT_X + PAD, y, FS_XXL, FW_BOLD, rgb(C_TEXT), CONTENT_W - 2 * PAD);
     y += 52;
     sections_ctx c = { v, NULL, false, true, vp, CONTENT_X + PAD - ROW_INSET, CONTENT_W - 2 * PAD + 2 * ROW_INSET };
     y = draw_sections(&c, v->page, 0, y);
@@ -69,7 +69,7 @@ static void search_bar(view *v)
         if (A.typing && ((int)(A.time * 2) % 2 == 0))
             gfx_rect(rect(tx + w + 2, r.y + 12, 2, r.h - 24), rgb(0x121212));
     } else {
-        text_draw_vc(tr(A.auth.is_premium ? "What do you want to listen to?" : "Search Audius"), tx, r.y + r.h / 2, FS_M, FW_REGULAR, rgb(0x6A6A6A), tw);
+        text_draw_vc(tr("What do you want to listen to?"), tx, r.y + r.h / 2, FS_M, FW_REGULAR, rgb(0x6A6A6A), tw);
         if (A.typing && ((int)(A.time * 2) % 2 == 0))
             gfx_rect(rect(tx, r.y + 12, 2, r.h - 24), rgb(0x121212));
     }
@@ -94,7 +94,7 @@ static void recent_searches(view *v, rectf vp)
         gfx_icon(ICON_SEARCH, CONTENT_X + CONTENT_W / 2.0f, cy - 36, 44, rgb(C_MUTED));
         text_draw_aligned(tr("Play what you love"), CONTENT_X + CONTENT_W / 2.0f, cy, FS_L, FW_BOLD,
                           rgb(C_TEXT), 0, ALIGN_CENTER);
-        text_draw_aligned(tr(A.auth.is_premium ? "Search for songs, artists, albums and playlists." : "Search public Audius tracks."), CONTENT_X + CONTENT_W / 2.0f,
+        text_draw_aligned(tr("Search for songs, artists, albums and playlists."), CONTENT_X + CONTENT_W / 2.0f,
                           cy + 32, FS_S, FW_REGULAR, rgb(C_SUBTEXT), 0, ALIGN_CENTER);
         v->content_h = 0;
         ui_scroll_end();
@@ -170,11 +170,6 @@ static bool lib_match(int filter, int kind)
 
 void screen_library(view *v)
 {
-    if (!A.auth.is_premium) {
-        text_draw(tr("Audius"), CONTENT_X + PAD, 24, FS_XXL, FW_BOLD, rgb(C_TEXT), CONTENT_W - 2 * PAD);
-        text_draw(tr("Audius library is not available yet."), CONTENT_X + PAD, 85, FS_M, FW_REGULAR, rgb(C_SUBTEXT), CONTENT_W - 2 * PAD);
-        return;
-    }
     static const char *const labels[LIB_FILTER_COUNT] = { "All", "Playlists", "Albums", "Artists" };
     rectf vp = rect(CONTENT_X, 104, CONTENT_W, CONTENT_H - 104);
 
