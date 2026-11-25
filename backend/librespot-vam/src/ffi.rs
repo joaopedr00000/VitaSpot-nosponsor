@@ -147,6 +147,7 @@ pub unsafe extern "C" fn vam_shutdown() {
     platform::shutdown_audio();
     platform::shutdown_network();
     backend.events.release_all();
+    log::logger().flush();
 }
 
 /// Monotonic clock in milliseconds, shared with `vam_player_state`.
