@@ -345,9 +345,6 @@ pub unsafe extern "C" fn vam_play(
     if auth.status != VAM_AUTH_LOGGED_IN {
         return VAM_ERR_AUTH;
     }
-    if auth.is_premium == 0 {
-        return VAM_ERR_NOT_PREMIUM;
-    }
     let context = cstr_to_string(context_uri);
     let track = cstr_to_string(track_uri);
     if context.is_empty() && track.is_empty() {
@@ -463,9 +460,6 @@ pub unsafe extern "C" fn vam_add_to_queue(track_uri: *const c_char) -> i32 {
     let auth = backend.auth_snapshot();
     if auth.status != VAM_AUTH_LOGGED_IN {
         return VAM_ERR_AUTH;
-    }
-    if auth.is_premium == 0 {
-        return VAM_ERR_NOT_PREMIUM;
     }
     if backend.send_command(Command::AddToQueue(track_uri)) {
         VAM_OK
