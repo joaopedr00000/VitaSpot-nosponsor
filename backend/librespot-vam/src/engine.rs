@@ -990,14 +990,12 @@ impl Engine {
         }
 
         // Playback status.
-        let playback = if snapshot.track_uri.is_empty() && !snapshot.is_playing {
+        let playback = if snapshot.is_buffering {
+            VAM_PLAYBACK_BUFFERING
+        } else if snapshot.track_uri.is_empty() && !snapshot.is_playing {
             VAM_PLAYBACK_STOPPED
         } else if snapshot.is_playing && !snapshot.is_paused {
-            if snapshot.is_buffering {
-                VAM_PLAYBACK_BUFFERING
-            } else {
-                VAM_PLAYBACK_PLAYING
-            }
+            VAM_PLAYBACK_PLAYING
         } else if snapshot.is_paused {
             VAM_PLAYBACK_PAUSED
         } else {
