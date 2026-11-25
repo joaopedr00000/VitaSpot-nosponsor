@@ -1088,14 +1088,13 @@ impl PlayerTrackLoader {
 
             let stream_loader_controller = encrypted_file.get_stream_loader_controller().ok()?;
 
-            // Not all audio files are encrypted. If we can't get a key, try loading the track
-            // without decryption. If the file was encrypted after all, the decoder will fail
-            // parsing and bail out, so we should be safe from outputting ear-piercing noise.
+            // A rejected key must not send encrypted bytes to the audio decoder.
+            // Local files take their own path above. Fail closed on remote media.
             let key = match self.session.audio_key().request(track_id, file_id).await {
                 Ok(key) => Some(key),
                 Err(e) => {
-                    warn!("Unable to load key, continuing without decryption: {e}");
-                    None
+                    error!("Audio authorization/key unavailable; refusing to decode protected audio: {e}");
+                    return None;
                 }
             };
 
