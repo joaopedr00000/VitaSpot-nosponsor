@@ -2,7 +2,18 @@
 #include "i18n.h"
 #include "prefs.h"
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
+#include "vam_backend.h"
 static const char *const messages[][4] = {
+    {"Playback command failed.", "Falha no comando de reprodução.", "Falló el comando de reproducción.", "Échec de la commande de lecture."},
+    {"Sign-in failed.", "Falha ao entrar.", "No se pudo iniciar sesión.", "Échec de connexion."},
+    {"Spotify request failed.", "Falha na solicitação ao Spotify.", "Falló la solicitud a Spotify.", "Échec de la requête Spotify."},
+    {"Search failed.", "Falha na busca.", "Falló la búsqueda.", "Échec de recherche."},
+    {"Spotify is rate limiting requests. Try again soon.", "Spotify limitou as solicitações. Tente em breve.", "Spotify limitó las solicitudes. Reintenta pronto.", "Spotify limite les requêtes. Réessayez bientôt."},
+    {"Spotify refused the request. Try logging in again.", "Spotify recusou a solicitação. Entre novamente.", "Spotify rechazó la solicitud. Inicia sesión de nuevo.", "Spotify a refusé la requête. Reconnectez-vous."},
+    {"Connect discovery unavailable. Try QR pairing or PC login.", "Connect indisponível. Tente QR ou login no PC.", "Connect no disponible. Prueba QR o PC.", "Connect indisponible. Essayez le QR ou le PC."},
     {"Home", "Início", "Inicio", "Accueil"},
     {"Search", "Buscar", "Buscar", "Rechercher"},
     {"Library", "Biblioteca", "Biblioteca", "Bibliothèque"},
@@ -194,4 +205,74 @@ const char *language_name(void) {
 void language_next(void) {
     prefs_get()->language = (prefs_get()->language + 1) % LANG_COUNT;
     prefs_changed();
+}
+
+/* Error details stay available in the English log. Only known diagnostic
+ * prefixes are translated, never arbitrary song names or account names. */
+const char *tr_message(const char *message) {
+    if (!message) return "";
+    const char *exact = tr(message);
+    if (exact != message || prefs_get()->language == 0) return exact;
+    static const struct { const char *prefix, *key; } patterns[] = {
+        {"Sign-in failed:", "Sign-in failed."},
+        {"Saved credentials were rejected:", "Sign-in failed."},
+        {"Couldn't pause:", "Playback command failed."},
+        {"Couldn't start playback:", "Playback command failed."},
+        {"Playback command failed:", "Playback command failed."},
+        {"Couldn't add to the queue:", "Couldn't add to queue."},
+        {"Search failed:", "Search failed."},
+        {"Couldn't sign the search request:", "Search failed."},
+        {"Bad search request:", "Search failed."},
+        {"Spotify request failed:", "Spotify request failed."},
+        {"Bad playlist from Spotify:", "Spotify request failed."},
+        {"Bad playlist list from Spotify:", "Spotify request failed."}
+    };
+    for (unsigned i = 0; i < sizeof(patterns)/sizeof(patterns[0]); ++i)
+        if (strncmp(message, patterns[i].prefix, strlen(patterns[i].prefix)) == 0)
+            return tr(patterns[i].key);
+    return message;
+}
+const char *tr_subtitle(int kind, const char *value, char *buffer, size_t size, int detail) {
+    if (!value || !*value || !buffer || size == 0 || prefs_get()->language == 0) return value;
+    if (kind == VAM_KIND_ARTIST && strcmp(value, "Artist") == 0) return tr("Artist");
+    if (!detail && (kind == VAM_KIND_ALBUM || kind == VAM_KIND_PLAYLIST || kind == VAM_KIND_COLLECTION)) {
+        const char *label = kind == VAM_KIND_ALBUM ? "Album" : "Playlist";
+        size_t len = strlen(label);
+        if (strcmp(value, label) == 0) return tr(label);
+        if (strncmp(value, label, len) == 0 && strncmp(value + len, " • ", strlen(" • ")) == 0) {
+            const char *tail = value + len + strlen(" • ");
+            if (kind == VAM_KIND_COLLECTION) {
+                char *end;
+                long n = strtol(tail, &end, 10);
+                if (end != tail && n >= 0 && n <= INT_MAX && strcmp(end, " songs") == 0) {
+                    char count[64];
+                    if (n == 1) snprintf(count, sizeof(count), "%s", tr("1 song"));
+                    else snprintf(count, sizeof(count), tr("%d songs"), (int)n);
+                    snprintf(buffer, size, "%s • %s", tr(label), count);
+                    return buffer;
+                }
+            }
+            snprintf(buffer, size, "%s • %s", tr(label), tail);
+            return buffer;
+        }
+    }
+    if (detail && (kind == VAM_KIND_ALBUM || kind == VAM_KIND_PLAYLIST || kind == VAM_KIND_COLLECTION)) {
+        const char *sep = NULL, *p = value;
+        while ((p = strstr(p, " • ")) != NULL) { sep = p; p += strlen(" • "); }
+        const char *tail = sep ? sep + strlen(" • ") : value;
+        char *end;
+        long n = strtol(tail, &end, 10);
+        if (end != tail && n >= 0 && n <= INT_MAX &&
+            (strcmp(end, " songs") == 0 || (n == 1 && strcmp(end, " song") == 0))) {
+            char count[64];
+            if (n == 1) snprintf(count, sizeof(count), "%s", tr("1 song"));
+            else snprintf(count, sizeof(count), tr("%d songs"), (int)n);
+            if (!sep) snprintf(buffer, size, "%s", count);
+            else if (kind == VAM_KIND_COLLECTION && sep - value == 3 && strncmp(value, "You", 3) == 0)
+                snprintf(buffer, size, "%s • %s", tr("You"), count);
+            else snprintf(buffer, size, "%.*s • %s", (int)(sep - value), value, count);
+            return buffer;
+        }
+    }
+    return value;
 }
