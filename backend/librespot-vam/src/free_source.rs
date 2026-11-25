@@ -81,7 +81,7 @@ fn match_score(track: &Item, candidate: &Value) -> Option<u64> {
 }
 async fn json(client: &Client, url: String, query: &[(&str, &str)]) -> Result<Value> {
     let mut response = client.get(url).query(query).timeout(Duration::from_secs(15))
-        .send().await.map_err(|_| NETWORK)?;
+        .send().await.map_err(|e| { log::warn!("Free source request failed: timeout={} connect={} request={}", e.is_timeout(), e.is_connect(), e.is_request()); NETWORK })?;
     if !response.status().is_success() {
         log::warn!("Free source API HTTP {}", response.status());
         return Err(NETWORK);
@@ -91,7 +91,7 @@ async fn json(client: &Client, url: String, query: &[(&str, &str)]) -> Result<Va
         if body.len().saturating_add(chunk.len()) > MAX_JSON { return Err(NETWORK); }
         body.extend_from_slice(&chunk);
     }
-    serde_json::from_slice(&body).map_err(|_| NETWORK)
+    serde_json::from_slice(&body).map_err(|e| { log::warn!("Free source response is not JSON: {e}"); NETWORK })
 }
 fn select_audio(streams: &Value) -> Option<&str> {
     streams["audioStreams"].as_array()?.iter().filter(|s| {
@@ -140,6 +140,7 @@ pub async fn resolve(backend: &Backend, track: &Item) -> Result<TempAudio> {
             let mut candidates: Vec<_> = search["items"].as_array().ok_or(NETWORK)?.iter()
                 .filter_map(|v| Some((match_score(track, v)?, video_id(v["url"].as_str()?)?))).collect();
             candidates.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+            log::info!("Free source: search returned {} matching recordings", candidates.len());
             if candidates.is_empty() { return Err(NO_MATCH); }
             let mut error = NO_FORMAT;
             for (_, id) in candidates.into_iter().take(2) {
@@ -149,7 +150,7 @@ pub async fn resolve(backend: &Backend, track: &Item) -> Result<TempAudio> {
                 if streams["livestream"].as_bool() == Some(true) { continue; }
                 // Recheck the returned recording; search results can be stale.
                 let Some(_) = match_score(track, &streams) else { error = NO_MATCH; continue; };
-                let Some(url) = select_audio(&streams) else { continue; };
+                let Some(url) = select_audio(&streams) else { log::warn!("Free source: matched recording has no supported AAC-LC stream"); continue; };
                 log::info!("Free source: matched recording {id}; AAC-LC/M4A");
                 match download(&client, backend, url).await {
                     Ok(file) => return Ok(file), Err(e) => error = e,

@@ -3,14 +3,13 @@
 use std::{fs::File, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU32, Ordering}}, time::Duration};
 use librespot_playback::{convert::Converter, decoder::AudioPacket};
 use symphonia::core::{
-    audio::SampleBuffer, codecs::DecoderOptions, errors::Error as DecodeError,
-    formats::{FormatOptions, SeekMode, SeekTo},
-    io::{MediaSourceStream, MediaSourceStreamOptions},
-    meta::MetadataOptions, probe::Hint, units::Time,
+    audio::SampleBuffer, errors::Error as DecodeError,
+    formats::{SeekMode, SeekTo}, units::Time,
 };
 use crate::{abi::*, free_source::{self, Result, TempAudio}, metadata, model::Item, pages,
     shared::{Shared, PlayerMeta}, util::{copy_str, now_ms_inner}};
 
+use crate::free_pcm::Resampler;
 const NO_SEEK: u32 = u32::MAX;
 const MAX_QUEUE: usize = 200;
 #[derive(Default)]
@@ -212,41 +211,13 @@ impl FreePlayer {
     }
 }
 
-// Linear stereo resampling with continuous phase across decoded packets.
-// Native sink runs at 44.1kHz; AAC commonly arrives at 44.1 or 48kHz.
-#[derive(Default)]
-struct Resampler { prev: Option<[f64; 2]>, phase: f64 }
-impl Resampler {
-    fn convert(&mut self, input: &[f64], channels: usize, rate: u32) -> Vec<f64> {
-        let step = rate as f64 / 44100.0;
-        let mut out = Vec::with_capacity(input.len()*2+8);
-        for frame in input.chunks_exact(channels) {
-            let current = [frame[0], if channels == 2 { frame[1] } else { frame[0] }];
-            if let Some(previous) = self.prev {
-                while self.phase <= 1.0 {
-                    for ch in 0..2 { out.push(previous[ch]+(current[ch]-previous[ch])*self.phase); }
-                    self.phase += step;
-                }
-                self.phase -= 1.0;
-            } else { out.extend_from_slice(&current); self.phase = step; }
-            self.prev = Some(current);
-        }
-        out
-    }
-}
 fn decode(shared: &Shared, control: &Control, output: &Mutex<()>, audio: TempAudio, diagnostic: bool) -> Result<()> {
     crate::platform::lower_current_thread_priority();
     let _exclusive = output.lock().unwrap_or_else(|e| e.into_inner());
     if control.stopped() { return Ok(()); }
     let input = File::open(&audio.0).map_err(|_| free_source::FILE_ERROR)?;
-    let stream = MediaSourceStream::new(Box::new(input), MediaSourceStreamOptions::default());
-    let mut hint = Hint::new(); hint.with_extension("m4a");
-    let mut format = symphonia::default::get_probe().format(&hint, stream, &FormatOptions::default(), &MetadataOptions::default())
-        .map_err(|e| { log::warn!("Free M4A probe: {e}"); free_source::AUDIO_ERROR })?.format;
-    let track = format.default_track().ok_or(free_source::AUDIO_ERROR)?;
-    let id = track.id;
-    let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default())
-        .map_err(|e| { log::warn!("Free AAC decoder: {e}"); free_source::AUDIO_ERROR })?;
+    let (mut format, mut decoder, id) = crate::free_pcm::open(input)
+        .map_err(|e| { log::warn!("Free audio probe or decoder: {e}"); free_source::AUDIO_ERROR })?;
     log::info!("Free audio: container and decoder initialized");
     let mut sink = crate::platform::make_sink();
     let mut converter = Converter::new(None);

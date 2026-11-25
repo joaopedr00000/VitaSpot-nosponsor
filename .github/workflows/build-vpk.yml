@@ -75,6 +75,9 @@ jobs:
           key: cargo-vita-${{ env.VAM_RUST_TOOLCHAIN }}-${{ hashFiles('backend/librespot-vam/Cargo.lock', 'backend/librespot-vam/vendor/**/Cargo.toml') }}
           restore-keys: cargo-vita-${{ env.VAM_RUST_TOOLCHAIN }}-
 
+      - name: Validate AAC decoder and resampler on host
+        run: cargo +stable test --manifest-path tools/free-audio-check/Cargo.toml -- --nocapture
+
       - name: Build backend (Rust)
         working-directory: backend/librespot-vam
         run: bash scripts/build-vita.sh
