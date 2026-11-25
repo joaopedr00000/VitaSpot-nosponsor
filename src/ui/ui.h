@@ -77,6 +77,7 @@ ui_res ui_item(uint32_t id, rectf r, unsigned flags);
 /* Focus */
 uint32_t ui_focus(void);
 void ui_set_focus(uint32_t id);
+void ui_show_focus(void);
 bool ui_focus_visible(void);
 /* Forget last frame's focusables (call after navigation changes screens). */
 void ui_reset_focus_list(void);
