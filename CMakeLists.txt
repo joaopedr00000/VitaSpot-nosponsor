@@ -71,6 +71,10 @@ endif()
 if(VITA)
     include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
+    # Leave room for vita-elf-create to insert SCE import/module metadata.
+    # The previous build failed because the data segment overlapped this area.
+    target_link_options(VitaSpot PRIVATE "-Wl,--defsym=__sce_headroom=0x2000")
+
     set(VITA_APP_NAME "VitaSpot")
     set(VITA_TITLEID "VTAM00001")
     set(VITA_VERSION "01.10")
