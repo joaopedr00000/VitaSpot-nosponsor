@@ -7,7 +7,12 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod abi;
+mod ad_filter;
+mod free_source;
+mod free_player;
+mod free_pcm;
 mod engine;
+mod device_login;
 mod ffi;
 mod images;
 mod internal;

@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "../app.h"
+#include "../i18n.h"
 #include "../gfx/text.h"
 #include "../theme.h"
 
@@ -31,9 +32,9 @@ static const char *greeting(void)
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     int h = t ? t->tm_hour : 12;
-    if (h >= 5 && h < 12) return "Good morning";
-    if (h >= 12 && h < 18) return "Good afternoon";
-    return "Good evening";
+    if (h >= 5 && h < 12) return tr("Good morning");
+    if (h >= 12 && h < 18) return tr("Good afternoon");
+    return tr("Good evening");
 }
 
 void screen_home(view *v)
@@ -68,7 +69,7 @@ static void search_bar(view *v)
         if (A.typing && ((int)(A.time * 2) % 2 == 0))
             gfx_rect(rect(tx + w + 2, r.y + 12, 2, r.h - 24), rgb(0x121212));
     } else {
-        text_draw_vc("What do you want to listen to?", tx, r.y + r.h / 2, FS_M, FW_REGULAR, rgb(0x6A6A6A), tw);
+        text_draw_vc(tr("What do you want to listen to?"), tx, r.y + r.h / 2, FS_M, FW_REGULAR, rgb(0x6A6A6A), tw);
         if (A.typing && ((int)(A.time * 2) % 2 == 0))
             gfx_rect(rect(tx, r.y + 12, 2, r.h - 24), rgb(0x121212));
     }
@@ -91,15 +92,15 @@ static void recent_searches(view *v, rectf vp)
     if (!A.recent[0][0]) {
         float cy = vp.y + vp.h / 2 - 30;
         gfx_icon(ICON_SEARCH, CONTENT_X + CONTENT_W / 2.0f, cy - 36, 44, rgb(C_MUTED));
-        text_draw_aligned("Play what you love", CONTENT_X + CONTENT_W / 2.0f, cy, FS_L, FW_BOLD,
+        text_draw_aligned(tr("Play what you love"), CONTENT_X + CONTENT_W / 2.0f, cy, FS_L, FW_BOLD,
                           rgb(C_TEXT), 0, ALIGN_CENTER);
-        text_draw_aligned("Search for songs, artists, albums and playlists.", CONTENT_X + CONTENT_W / 2.0f,
+        text_draw_aligned(tr("Search for songs, artists, albums and playlists."), CONTENT_X + CONTENT_W / 2.0f,
                           cy + 32, FS_S, FW_REGULAR, rgb(C_SUBTEXT), 0, ALIGN_CENTER);
         v->content_h = 0;
         ui_scroll_end();
         return;
     }
-    text_draw("Recent searches", x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
+    text_draw(tr("Recent searches"), x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
     y += 40;
     for (int i = 0; i < RECENT_SEARCHES && A.recent[i][0]; i++) {
         rectf r = rect(x, y, w, 56);
@@ -139,10 +140,10 @@ void screen_search(view *v)
                 empty = false;
         if (empty) {
             char msg[320];
-            snprintf(msg, sizeof(msg), "No results found for \"%s\"", v->query);
+            snprintf(msg, sizeof(msg), tr("No results found for \"%s\""), v->query);
             text_draw_aligned(msg, CONTENT_X + CONTENT_W / 2.0f, vp.y + 80, FS_L, FW_BOLD, rgb(C_TEXT),
                               CONTENT_W - 2 * PAD, ALIGN_CENTER);
-            text_draw_aligned("Check the spelling, or try different keywords.", CONTENT_X + CONTENT_W / 2.0f,
+            text_draw_aligned(tr("Check the spelling, or try different keywords."), CONTENT_X + CONTENT_W / 2.0f,
                               vp.y + 114, FS_S, FW_REGULAR, rgb(C_SUBTEXT), 0, ALIGN_CENTER);
         }
         v->content_h = y + v->scroll.pos - vp.y + 24;
@@ -188,7 +189,7 @@ void screen_library(view *v)
             shown++;
         }
         if (!shown)
-            text_draw_aligned("Nothing here yet", CONTENT_X + CONTENT_W / 2.0f, vp.y + 60, FS_M, FW_BOLD,
+            text_draw_aligned(tr("Nothing here yet"), CONTENT_X + CONTENT_W / 2.0f, vp.y + 60, FS_M, FW_BOLD,
                               rgb(C_SUBTEXT), 0, ALIGN_CENTER);
         v->content_h = y + v->scroll.pos - vp.y + 16;
         ui_scroll_end();
@@ -197,12 +198,12 @@ void screen_library(view *v)
     }
 
     gfx_rect(rect(CONTENT_X, 0, CONTENT_W, 104), rgb(C_BG));
-    text_draw("Your Library", CONTENT_X + PAD, 18, FS_XL, FW_BOLD, rgb(C_TEXT), CONTENT_W - 2 * PAD);
+    text_draw(tr("Your Library"), CONTENT_X + PAD, 18, FS_XL, FW_BOLD, rgb(C_TEXT), CONTENT_W - 2 * PAD);
     float x = CONTENT_X + PAD;
     for (int f = 1; f < LIB_FILTER_COUNT; f++) {
         float w = 0;
         bool active = v->filter == f;
-        if (pill_button(ui_idx(ui_id("library.filter"), f), labels[f], x, 56, active, &w)) {
+        if (pill_button(ui_idx(ui_id("library.filter"), f), tr(labels[f]), x, 56, active, &w)) {
             v->filter = active ? LIB_ALL : f;
             v->scroll.pos = 0;
         }

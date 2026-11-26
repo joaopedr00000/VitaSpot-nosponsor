@@ -1,4 +1,5 @@
 #include "prefs.h"
+#include "i18n.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,6 +47,7 @@ void prefs_load(void)
     g_prefs.off_after = 120;
     g_prefs.bitrate = platform_is_vita() ? 320 : 160;
     g_prefs.cache_mb = 512;
+    g_prefs.language = 0;
 
     char path[512];
     settings_path(path, sizeof(path));
@@ -88,6 +90,9 @@ void prefs_load(void)
             for (int i = 0; i < CACHE_CHOICE_COUNT; i++)
                 if (CACHE_CHOICES[i] == mb)
                     g_prefs.cache_mb = mb;
+        } else if (strcmp(line, "language") == 0) {
+            int lang = atoi(v);
+            if (lang >= 0 && lang < LANG_COUNT) g_prefs.language = lang;
         } else if (strcmp(line, "lyrics") == 0) {
             g_prefs.lyrics = atoi(v) != 0;
         }
@@ -112,6 +117,7 @@ static void save(void)
     fprintf(f, "screen_off_after=%d\n", g_prefs.off_after);
     fprintf(f, "audio_quality=%d\n", g_prefs.bitrate);
     fprintf(f, "audio_cache_mb=%d\n", g_prefs.cache_mb);
+    fprintf(f, "language=%d\n", g_prefs.language);
     fprintf(f, "lyrics=%d\n", g_prefs.lyrics ? 1 : 0);
     bool ok = !ferror(f);
     if (fclose(f) != 0 || !ok) {

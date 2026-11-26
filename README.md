@@ -4,7 +4,7 @@ A homebrew Spotify client for the PS Vita. It streams and plays music on the
 Vita itself through [librespot](https://github.com/librespot-org/librespot),
 shows up as a Spotify Connect device in the official apps, and has a touch and
 button UI laid out like Spotify's own (sidebar, shelves, Now Playing) with its
-own branding. **Spotify Premium is required.**
+own branding. **Experimental fork:** Free accounts can browse and submit playback commands, but Spotify controls access to audio. Premium may still be required. No subscription is spoofed and ad-free playback is not guaranteed.
 
 > Unofficial and not affiliated with Spotify. librespot and the internal
 > endpoints used here are Spotify's private protocol, which breaks Spotify's
@@ -48,9 +48,10 @@ own branding. **Spotify Premium is required.**
 ## Installing and signing in
 
 1. Install `VitaSpot.vpk` with VitaShell.
-2. Connect the Vita to Wi-Fi and start VitaSpot. It shows a login screen and
-   advertises itself as **PS Vita** on your network.
-3. Open Spotify on a phone or PC on the **same Wi-Fi**, open the device picker
+2. Connect the Vita to Wi-Fi and start VitaSpot. On the experimental QR pairing build, wait for a pairing code, scan the QR with your phone, enter the displayed code at https://spotify.com/pair and approve. The Vita polls Spotify directly; no PC, local discovery or password entry on the Vita is required. The flow depends on Spotify enabling device authorization for the existing client identity.
+
+   Alternatively, VitaSpot advertises itself as **PS Vita** on your network.
+3. For Spotify Connect fallback, open Spotify on a phone or PC on the **same Wi-Fi**, open the device picker
    (the speaker icon) and choose **PS Vita**. The Vita signs in and remembers
    the account.
 
@@ -247,3 +248,21 @@ uploads)`).
   [Noto Sans CJK](https://github.com/notofonts/noto-cjk) (SIL OFL,
   `assets/fonts/LICENSE-NotoSansCJK.txt`).
 - SDL2, SDL2_ttf and SDL2_image (zlib licence), built with VitaSDK.
+
+## Experimental Free account mode
+
+This branch removes the frontend-only Premium screen and redundant local checks on play/queue commands. The actual account type and Spotify's server-side authorization remain unchanged. This does not provide Premium audio keys, remove server-side advertising, or guarantee unlimited skips. Check `ux0:data/VitaSpot/vam.log` for track availability and audio-key errors. QR pairing and Connect fallback remain available.
+
+## Experimental native ad filter
+
+The test branch filters dedicated ad image hosts and locally silences explicitly marked ads on Vita without changing system volume. See [the compatibility review](docs/ad-filter-research.md) for scope, sources, tests and limitations. Open Settings > Tweaks > Ad blocker to toggle the existing filter immediately. The selection is saved in the legacy `ux0:data/VitaSpot/disable_ad_filter` marker; no restart is required. SELECT opens the queue as before. `vam-diagnostic.log` records filter changes and playback requests including the requested and actual state. To compare, test the same track with the filter enabled and disabled. This does not unlock Premium or guarantee uninterrupted playback.
+
+## Experimental Free audio source
+
+Spotify remains the catalog, login, search, artwork, playlists and library provider. Only confirmed Free accounts route local playback to a separate Piped-compatible source, inspired by the modular source architecture of Spotube and Musify. Premium continues through librespot. The alternate provider receives the selected title and artist, not Spotify credentials. It resolves a matching publicly available recording using title, artist and duration, chooses AAC-LC/M4A, and decodes to the existing Vita stereo audio sink with sample-rate conversion. Audio is temporary (32 MiB limit), not an offline library. No Spotify decryption or account spoofing is performed.
+
+Public Piped instances can be down or fail to serve particular tracks. A user-provided HTTPS Piped API base URL in ux0:data/VitaSpot/free-source.txt replaces the defaults. Use only sources and recordings you are authorized to access. No guarantee of matching all Spotify tracks. Free queue and playback controls are experimental; shuffle/repeat not implemented in this mode. See vam-diagnostic.log for Free source, HTTP, AAC and PCM markers. Dependencies: Symphonia 0.5 with aac/isomp4 features. References: https://github.com/team-spotube/spotube , https://github.com/gokadzev/Musify , https://docs.piped.video/docs/api-documentation/ .
+
+### 0.0.14d audio diagnostics
+
+Free accounts can run Settings > Audio > Test local audio. The built-in synthetic 440 Hz AAC tone requires no network or Spotify authorization for the sound itself. The same M4A probe and PCM resampler are exercised by a host CI test before packaging the VPK. A successful PCM submission is not proof of audible hardware output. New logs: ux0:data/VitaSpot/vam-audio-014.log (or vam-audio-014-fallback.log) and vam-ui-014.log. Old diagnostic files are deliberately untouched. A 90-second overall source resolution deadline prevents indefinite loading. Public instances remain experimental and may be unreachable; only authorized audio sources should be used.

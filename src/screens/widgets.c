@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "../app.h"
+#include "../i18n.h"
 #include "../gfx/images.h"
 #include "../gfx/text.h"
 #include "../theme.h"
@@ -17,13 +18,13 @@ void fmt_duration(uint32_t ms, char *buf, size_t n)
 const char *kind_label(int kind)
 {
     switch (kind) {
-    case VAM_KIND_TRACK: return "Song";
-    case VAM_KIND_EPISODE: return "Episode";
-    case VAM_KIND_ALBUM: return "Album";
-    case VAM_KIND_PLAYLIST: return "Playlist";
-    case VAM_KIND_ARTIST: return "Artist";
-    case VAM_KIND_SHOW: return "Podcast";
-    case VAM_KIND_COLLECTION: return "Playlist";
+    case VAM_KIND_TRACK: return tr("Song");
+    case VAM_KIND_EPISODE: return tr("Episode");
+    case VAM_KIND_ALBUM: return tr("Album");
+    case VAM_KIND_PLAYLIST: return tr("Playlist");
+    case VAM_KIND_ARTIST: return tr("Artist");
+    case VAM_KIND_SHOW: return tr("Podcast");
+    case VAM_KIND_COLLECTION: return tr("Playlist");
     default: return "";
     }
 }
@@ -127,10 +128,10 @@ void draw_loading(rectf area)
 bool draw_error(rectf area, const char *msg)
 {
     float cy = area.y + area.h / 2;
-    text_draw_aligned("Couldn't load this", area.x + area.w / 2, cy - 62, FS_L, FW_BOLD,
+    text_draw_aligned(tr("Couldn't load this"), area.x + area.w / 2, cy - 62, FS_L, FW_BOLD,
                       rgb(C_TEXT), area.w - 40, ALIGN_CENTER);
-    text_draw_aligned(msg && *msg ? msg : "Check your connection and try again.", area.x + area.w / 2,
+    text_draw_aligned(msg && *msg ? tr_message(msg) : tr("Check your connection and try again."), area.x + area.w / 2,
                       cy - 30, FS_S, FW_REGULAR, rgb(C_SUBTEXT), area.w - 40, ALIGN_CENTER);
-    float w = text_width("Try again", FS_S, FW_REGULAR, 0) + 32.0f;
-    return pill_button(ui_id("error.retry"), "Try again", area.x + (area.w - w) / 2, cy + 6, false, NULL);
+    float w = text_width(tr("Try again"), FS_S, FW_REGULAR, 0) + 32.0f;
+    return pill_button(ui_id("error.retry"), tr("Try again"), area.x + (area.w - w) / 2, cy + 6, false, NULL);
 }

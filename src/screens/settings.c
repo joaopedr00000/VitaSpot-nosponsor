@@ -3,10 +3,12 @@
 #include <stdio.h>
 
 #include "../app.h"
+#include "../i18n.h"
 #include "../gfx/images.h"
 #include "../gfx/text.h"
 #include "../power.h"
 #include "../prefs.h"
+#include "../platform/platform.h"
 #include "../theme.h"
 
 /* Log out asks once more before it forgets the saved login. */
@@ -30,7 +32,7 @@ static float account_card(float x, float y, float w)
     }
 
     /* Buttons sit at the right; the text gets what is left. */
-    const char *confirm = "Log out", *cancel = "Cancel";
+    const char *confirm = tr("Log out"), *cancel = tr("Cancel");
     float by = card.y + (card.h - 40) / 2, right = card.x + card.w - 16;
     float buttons_w = g_confirm_logout ? pill_w(cancel) + 8 + pill_w(confirm) : pill_w(confirm);
     float tx = pic.x + pic.w + 16, tw = right - buttons_w - 16 - tx;
@@ -38,7 +40,7 @@ static float account_card(float x, float y, float w)
     const char *name = A.auth.display_name[0] ? A.auth.display_name : A.auth.username;
     text_draw(name, tx, card.y + 22, FS_L, FW_BOLD, rgb(C_TEXT), tw);
     if (g_confirm_logout)
-        text_draw("Log out of Spotify on this Vita?", tx, card.y + 54, FS_S, FW_REGULAR, rgb(C_TEXT), tw);
+        text_draw(tr("Log out of Spotify on this Vita?"), tx, card.y + 54, FS_S, FW_REGULAR, rgb(C_TEXT), tw);
     else
         text_draw(A.auth.is_premium ? "Spotify Premium" : "Spotify Free", tx, card.y + 54, FS_S, FW_REGULAR,
                   rgb(C_SUBTEXT), tw);
@@ -52,7 +54,7 @@ static float account_card(float x, float y, float w)
         if (pill_button(ui_id("settings.confirm"), confirm, cx + pill_w(cancel) + 8, by, true, NULL)) {
             g_confirm_logout = false;
             if (vam_logout() != VAM_OK)
-                app_toast("Couldn't log out. Try again.");
+                app_toast(tr("Couldn't log out. Try again."));
         }
     } else if (pill_button(ui_id("settings.logout"), confirm, right - buttons_w, by, false, NULL)) {
         g_confirm_logout = true;
@@ -66,13 +68,13 @@ static float account_card(float x, float y, float w)
 static void fmt_seconds(int s, char *buf, size_t n)
 {
     if (s <= 0)
-        snprintf(buf, n, "Never");
+        snprintf(buf, n, tr("Never"));
     else if (s < 60)
-        snprintf(buf, n, "%d seconds", s);
+        snprintf(buf, n, tr("%d seconds"), s);
     else if (s < 120)
-        snprintf(buf, n, "1 minute");
+        snprintf(buf, n, tr("1 minute"));
     else
-        snprintf(buf, n, "%d minutes", s / 60);
+        snprintf(buf, n, tr("%d minutes"), s / 60);
 }
 
 /* The choice after cur, wrapping; tapping the value cycles through them. */
@@ -114,22 +116,22 @@ static float screen_card(float x, float y, float w)
     }
     bool capturing = ui_capturing_combo();
     float cy = card.y + SCREEN_ROW_H / 2.0f;
-    text_draw_vc("Screen off combo", lx, cy, FS_M, FW_REGULAR, rgb(C_TEXT), 260);
-    const char *action = capturing ? "Cancel" : "Change";
+    text_draw_vc(tr("Screen off combo"), lx, cy, FS_M, FW_REGULAR, rgb(C_TEXT), 260);
+    const char *action = capturing ? tr("Cancel") : tr("Change");
     float aw = pill_w(action);
     char combo[64];
-    snprintf(combo, sizeof(combo), "%s + %s", platform_btn_label(ps->combo[0]), platform_btn_label(ps->combo[1]));
-    text_draw_aligned(capturing ? "Hold two buttons..." : combo, right - aw - 16, cy - text_line_height(FS_M) / 2.0f,
+    snprintf(combo, sizeof(combo), "%s + %s", tr(platform_btn_label(ps->combo[0])), tr(platform_btn_label(ps->combo[1])));
+    text_draw_aligned(capturing ? tr("Hold two buttons...") : combo, right - aw - 16, cy - text_line_height(FS_M) / 2.0f,
                       FS_M, capturing ? FW_BOLD : FW_REGULAR, rgb(capturing ? C_ACCENT : C_SUBTEXT), 0, ALIGN_RIGHT);
     if (pill_button(ui_id("settings.combo"), action, right - aw, cy - 20, false, NULL))
         ui_capture_combo(!capturing);
 
-    timer_row(ui_id("settings.dim"), "Dim screen after", &ps->dim_after, POWER_DIM_CHOICES, lx,
+    timer_row(ui_id("settings.dim"), tr("Dim screen after"), &ps->dim_after, POWER_DIM_CHOICES, lx,
               card.y + SCREEN_ROW_H * 1.5f, right);
-    timer_row(ui_id("settings.off"), "Turn screen off after", &ps->off_after, POWER_OFF_CHOICES, lx,
+    timer_row(ui_id("settings.off"), tr("Turn screen off after"), &ps->off_after, POWER_OFF_CHOICES, lx,
               card.y + SCREEN_ROW_H * 2.5f, right);
 
-    text_draw("Music keeps playing with the screen off. Press any button to turn it back on.", x,
+    text_draw(tr("Music keeps playing with the screen off. Press any button to turn it back on."), x,
               card.y + card.h + 10, FS_S, FW_REGULAR, rgb(C_MUTED), w);
     return card.h + 10 + text_line_height(FS_S);
 }
@@ -138,7 +140,7 @@ static const int BITRATES[] = { 320, 160, 96 };
 
 static const char *quality_label(int kbps)
 {
-    return kbps == 320 ? "High (320 kbps)" : kbps == 160 ? "Normal (160 kbps)" : "Low (96 kbps)";
+    return kbps == 320 ? tr("High (320 kbps)") : kbps == 160 ? tr("Normal (160 kbps)") : tr("Low (96 kbps)");
 }
 
 static void fmt_cache(int mb, char *buf, size_t n)
@@ -156,7 +158,7 @@ static float audio_card(float x, float y, float w)
     gfx_rrect(card, 8, rgb(C_SURFACE));
     gfx_rect(rect(card.x + 16, card.y + SCREEN_ROW_H, card.w - 32, 1), rgb(C_DIVIDER));
     float cy = card.y + SCREEN_ROW_H / 2.0f, right = card.x + card.w - 16;
-    text_draw_vc("Audio quality", card.x + 16, cy, FS_M, FW_REGULAR, rgb(C_TEXT), 260);
+    text_draw_vc(tr("Audio quality"), card.x + 16, cy, FS_M, FW_REGULAR, rgb(C_TEXT), 260);
     const char *val = quality_label(p->bitrate);
     if (pill_button(ui_id("settings.quality"), val, right - pill_w(val), cy - 20, false, NULL)) {
         int i = 0;
@@ -168,13 +170,13 @@ static float audio_card(float x, float y, float w)
             p->bitrate = next;
             prefs_changed();
         } else {
-            app_toast("Couldn't change the audio quality.");
+            app_toast(tr("Couldn't change the audio quality."));
         }
     }
 
     /* The backend opens the cache at start, so a new size waits for a restart. */
     cy += SCREEN_ROW_H;
-    text_draw_vc("Audio cache", card.x + 16, cy, FS_M, FW_REGULAR, rgb(C_TEXT), 260);
+    text_draw_vc(tr("Audio cache"), card.x + 16, cy, FS_M, FW_REGULAR, rgb(C_TEXT), 260);
     char size[16];
     fmt_cache(p->cache_mb, size, sizeof(size));
     if (pill_button(ui_id("settings.cache"), size, right - pill_w(size), cy - 20, false, NULL)) {
@@ -186,22 +188,27 @@ static float audio_card(float x, float y, float w)
     }
 
     float ny = card.y + card.h + 10, lh = text_line_height(FS_S);
-    text_draw("Quality applies from the next song. Lower quality uses less data and starts faster.", x, ny, FS_S,
+    text_draw(tr("Quality applies from the next song. Lower quality uses less data and starts faster."), x, ny, FS_S,
               FW_REGULAR, rgb(C_MUTED), w);
-    text_draw("Played songs are kept on the memory card. A new cache size applies after a restart.", x, ny + lh,
+    text_draw(tr("Played songs are kept on the memory card. A new cache size applies after a restart."), x, ny + lh,
               FS_S, FW_REGULAR, rgb(C_MUTED), w);
     return card.h + 10 + 2 * lh;
 }
 
 static float about_card(float x, float y, float w)
 {
-    rectf card = rect(x, y, w, 96);
+    rectf card = rect(x, y, w, platform_is_vita() ? 128 : 96);
     gfx_rrect(card, 8, rgb(C_SURFACE));
     text_draw("VitaSpot", card.x + 16, card.y + 20, FS_M, FW_BOLD, rgb(C_TEXT), card.w - 32);
-    text_draw_aligned("Version " VAM_APP_VERSION, card.x + card.w - 16, card.y + 22, FS_S, FW_REGULAR,
+    char version[64];
+    snprintf(version, sizeof(version), tr("Version %s"), VAM_APP_VERSION);
+    text_draw_aligned(version, card.x + card.w - 16, card.y + 22, FS_S, FW_REGULAR,
                       rgb(C_SUBTEXT), 0, ALIGN_RIGHT);
-    text_draw("An unofficial Spotify client for the PS Vita. Not affiliated with Spotify.", card.x + 16,
+    text_draw(tr("An unofficial Spotify client for the PS Vita. Not affiliated with Spotify."), card.x + 16,
               card.y + 50, FS_S, FW_REGULAR, rgb(C_SUBTEXT), card.w - 32);
+    if (platform_is_vita())
+        text_draw(tr(app_diagnostic_status()), card.x + 16, card.y + 83, FS_S,
+                  FW_REGULAR, rgb(C_TEXT), card.w - 32);
     return card.h;
 }
 
@@ -220,22 +227,62 @@ void screen_settings(view *v)
     ui_scroll_begin(&v->scroll, vp, v->content_h, AXIS_Y, true);
     float x = CONTENT_X + PAD, w = CONTENT_W - 2 * PAD;
     float y = CONTENT_Y + 22 - v->scroll.pos;
-    text_draw("Settings", x, y, FS_XXL, FW_BOLD, rgb(C_TEXT), w);
+    text_draw(tr("Settings"), x, y, FS_XXL, FW_BOLD, rgb(C_TEXT), w);
     y += 68;
 
-    text_draw("Account", x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
+    text_draw(tr("Language"), x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
+    const char *lang = language_name();
+    if (pill_button(ui_id("settings.language"), lang, x + w - pill_w(lang), y - 5, false, NULL))
+        language_next();
+    y += 62;
+
+    text_draw(tr("Tweaks"), x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
+    y += 38;
+    rectf tweaks = rect(x, y, w, SCREEN_ROW_H);
+    gfx_rrect(tweaks, 8, rgb(C_SURFACE));
+    bool filter_on = vam_ad_filter_enabled() != 0;
+    const char *filter_value = tr(filter_on ? "Enabled" : "Disabled");
+    float right = tweaks.x + tweaks.w - 16;
+    float bw = pill_w(filter_value);
+    text_draw_vc(tr("Ad blocker"), tweaks.x + 16, tweaks.y + tweaks.h / 2,
+                 FS_M, FW_REGULAR, rgb(C_TEXT), tweaks.w - bw - 48);
+    if (pill_button(ui_id("settings.tweaks.adblock"), filter_value, right - bw,
+                    tweaks.y + (tweaks.h - 40) / 2, filter_on, NULL)) {
+        int result = vam_set_ad_filter(filter_on ? 0 : 1);
+        char diagnostic[100];
+        snprintf(diagnostic, sizeof(diagnostic), "Tweaks: ad filter requested=%d result=%d actual=%d",
+                 filter_on ? 0 : 1, result, vam_ad_filter_enabled());
+        vam_log(diagnostic);
+        app_toast(tr(result == VAM_OK
+                     ? (filter_on ? "Ad blocker disabled." : "Ad blocker enabled.")
+                     : "Could not save ad blocker setting."));
+    }
+    y += tweaks.h + 10;
+    text_draw(tr("Changes apply immediately."), x, y, FS_S, FW_REGULAR, rgb(C_MUTED), w);
+    y += text_line_height(FS_S) + 32;
+
+    text_draw(tr("Account"), x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
     y += 38;
     y += account_card(x, y, w) + 32;
 
-    text_draw("Screen", x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
+    text_draw(tr("Screen"), x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
     y += 38;
     y += screen_card(x, y, w) + 32;
 
-    text_draw("Audio", x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
+    text_draw(tr("Audio"), x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
     y += 38;
-    y += audio_card(x, y, w) + 32;
+    y += audio_card(x, y, w) + 12;
+    if (A.auth.status == VAM_AUTH_LOGGED_IN && !A.auth.is_premium) {
+        const char *test = tr("Test local audio");
+        if (pill_button(ui_id("settings.audio.selftest"), test, x, y, false, NULL)) {
+            if (vam_play("vam:audio-test", NULL, 0) != VAM_OK)
+                app_toast(tr("Playback command failed."));
+        }
+        y += 50;
+    }
+    y += 20;
 
-    text_draw("About", x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
+    text_draw(tr("About"), x, y, FS_L, FW_BOLD, rgb(C_TEXT), w);
     y += 38;
     y += about_card(x, y, w);
 

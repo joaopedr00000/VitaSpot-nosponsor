@@ -7,7 +7,7 @@ project(VitaSpot C)
 
 # App version, shown in Settings and at the top of vam.log. A "d" suffix marks
 # a development build; it changes only when a release is cut.
-set(VITASPOT_VERSION "0.0.4")
+set(VITASPOT_VERSION "0.0.15d")
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -26,6 +26,7 @@ set(FRONTEND_SOURCES
     src/model.c
     src/power.c
     src/prefs.c
+    src/i18n.c
     src/gfx/gfx.c
     src/gfx/text.c
     src/gfx/images.c
@@ -70,9 +71,13 @@ endif()
 if(VITA)
     include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
+    # Leave room for vita-elf-create to insert SCE import/module metadata.
+    # The previous build failed because the data segment overlapped this area.
+    target_link_options(VitaSpot PRIVATE "-Wl,--defsym=__sce_headroom=0x2000")
+
     set(VITA_APP_NAME "VitaSpot")
     set(VITA_TITLEID "VTAM00001")
-    set(VITA_VERSION "01.00")
+    set(VITA_VERSION "01.10")
 
     target_include_directories(VitaSpot PRIVATE $ENV{VITASDK}/arm-vita-eabi/include/SDL2)
 

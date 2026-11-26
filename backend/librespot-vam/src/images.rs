@@ -158,6 +158,10 @@ pub async fn fetch_image(shared: &Shared, url: &str) -> Result<Vec<u8>, ApiError
             "That image has no download URL.",
         ));
     }
+    if crate::ad_filter::block_image(url) {
+        log::info!("ad filter: blocked dedicated ad image host");
+        return Err(ApiError::new(crate::abi::VAM_ERR_NOT_FOUND, "Advertising image filtered."));
+    }
     let key = sha1_hex(url.as_bytes());
     if let Some(bytes) = shared.images.get(&key) {
         return Ok(bytes);

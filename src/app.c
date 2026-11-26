@@ -1,7 +1,10 @@
 #include "app.h"
+#include "i18n.h"
 
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <stdarg.h>
 
 #include "gfx/images.h"
 #include "gfx/text.h"
@@ -12,6 +15,57 @@
 #include "theme.h"
 
 app A;
+
+/* Independent frontend diagnostic, using VitaSDK's C stdio rather than Rust.
+ * No credentials, track identifiers or raw server response bodies are stored. */
+static FILE *g_ui_log;
+static int g_ui_log_error;
+static int g_backend_log_status;
+
+static void ui_diagnostic(const char *format, ...)
+{
+    if (!g_ui_log) return;
+    va_list args;
+    va_start(args, format);
+    int rc = vfprintf(g_ui_log, format, args);
+    va_end(args);
+    if (rc < 0 || fputc('\n', g_ui_log) == EOF || fflush(g_ui_log) != 0) {
+        g_ui_log_error = errno ? errno : 1;
+        fclose(g_ui_log);
+        g_ui_log = NULL;
+    }
+}
+
+static void probe_backend_log(void)
+{
+    const char *names[] = {"vam-audio-015.log", "vam-audio-015-fallback.log"};
+    g_backend_log_status = 0;
+    for (int i = 0; i < 2; i++) {
+        char path[512], line[256];
+        snprintf(path, sizeof(path), "%s%s", platform_data_dir(), names[i]);
+        FILE *f = fopen(path, "r");
+        if (!f) {
+            ui_diagnostic("backend probe %s: fopen errno=%d", names[i], errno);
+            continue;
+        }
+        if (fgets(line, sizeof(line), f) && strstr(line, "backend diagnostic revision 2")) {
+            g_backend_log_status = i + 1;
+            fclose(f);
+            break;
+        }
+        fclose(f);
+        ui_diagnostic("backend probe %s: diagnostic marker missing", names[i]);
+    }
+    ui_diagnostic("backend log status=%d", g_backend_log_status);
+}
+
+const char *app_diagnostic_status(void)
+{
+    if (g_ui_log_error) return "Could not write vam-ui-015.log";
+    if (g_backend_log_status == 1) return "Backend log: vam-audio-015.log";
+    if (g_backend_log_status == 2) return "Backend log: vam-audio-015-fallback.log";
+    return "Backend log missing; send vam-ui-015.log";
+}
 
 #define PENDING_SAVES 16
 static struct { uint32_t req; char uri[VAM_URI_MAX]; bool prev; } g_saves[PENDING_SAVES];
@@ -78,7 +132,7 @@ void app_request_view(view *v)
     v->req = vam_request_page(uri, 0, 50);
     if (!v->req) {
         v->failed = true;
-        snprintf(v->error, sizeof(v->error), "Couldn't reach the player service.");
+        snprintf(v->error, sizeof(v->error), tr("Couldn't reach the player service."));
     }
 }
 
@@ -224,7 +278,7 @@ void app_toast(const char *msg)
 {
     if (!msg || !*msg)
         return;
-    snprintf(A.toast, sizeof(A.toast), "%s", msg);
+    snprintf(A.toast, sizeof(A.toast), "%s", tr_message(msg));
     A.toast_until = A.time + 2.6f;
 }
 
@@ -234,11 +288,11 @@ static void check(vam_result r, const char *what)
         return;
     char buf[160];
     if (r == VAM_ERR_NOT_PREMIUM)
-        snprintf(buf, sizeof(buf), "Spotify Premium is required to %s.", what);
+        snprintf(buf, sizeof(buf), tr("Spotify Premium is required to %s."), what);
     else if (r == VAM_ERR_NETWORK)
-        snprintf(buf, sizeof(buf), "No connection. Couldn't %s.", what);
+        snprintf(buf, sizeof(buf), tr("No connection. Couldn't %s."), what);
     else
-        snprintf(buf, sizeof(buf), "Couldn't %s.", what);
+        snprintf(buf, sizeof(buf), tr("Couldn't %s."), what);
     app_toast(buf);
 }
 
@@ -247,16 +301,16 @@ void app_play_item(const vam_item *it, const char *context_uri, uint32_t index)
     if (!it)
         return;
     if (!it->is_playable && (it->kind == VAM_KIND_TRACK || it->kind == VAM_KIND_EPISODE)) {
-        app_toast("This song isn't available.");
+        app_toast(tr("This song isn't available."));
         return;
     }
     switch (it->kind) {
     case VAM_KIND_TRACK:
     case VAM_KIND_EPISODE:
-        check(vam_play(context_uri, it->uri, index), "play this");
+        check(vam_play(context_uri, it->uri, index), tr("play this"));
         break;
     default:
-        check(vam_play(it->uri, NULL, 0), "play this");
+        check(vam_play(it->uri, NULL, 0), tr("play this"));
         break;
     }
 }
@@ -265,7 +319,7 @@ void app_toggle_saved(const char *uri, bool currently_saved)
 {
     uint32_t req = vam_set_saved(uri, !currently_saved);
     if (!req) {
-        app_toast("Couldn't update your library.");
+        app_toast(tr("Couldn't update your library."));
         return;
     }
     for (int i = 0; i < PENDING_SAVES; i++) {
@@ -280,9 +334,9 @@ void app_toggle_saved(const char *uri, bool currently_saved)
     apply_saved(uri, !currently_saved);
     bool is_track = strncmp(uri, "spotify:track:", 14) == 0;
     if (is_track)
-        app_toast(currently_saved ? "Removed from Liked Songs" : "Added to Liked Songs");
+        app_toast(currently_saved ? tr("Removed from Liked Songs") : tr("Added to Liked Songs"));
     else
-        app_toast(currently_saved ? "Removed from Your Library" : "Saved to Your Library");
+        app_toast(currently_saved ? tr("Removed from Your Library") : tr("Saved to Your Library"));
 }
 
 void app_open_sheet(const vam_item *item, const char *context_uri, uint32_t index)
@@ -482,16 +536,21 @@ static void handle_vam_event(vam_event *ev)
     case VAM_EV_AUTH_CHANGED: {
         int before = A.auth.status;
         vam_get_auth_state(&A.auth);
+        ui_diagnostic("auth status=%d premium=%d", A.auth.status, A.auth.is_premium);
         if (before == VAM_AUTH_LOGGED_IN && A.auth.status != VAM_AUTH_LOGGED_IN) {
             reset_stacks();
             lyrics_reset();
         }
         break;
     }
-    case VAM_EV_PLAYER_CHANGED:
+    case VAM_EV_PLAYER_CHANGED: {
+        int before = A.player.playback;
         vam_get_player_state(&A.player);
+        if (before != A.player.playback)
+            ui_diagnostic("playback state=%d active=%d", A.player.playback, A.player.is_active_device);
         A.have_player = true;
         break;
+    }
     case VAM_EV_PAGE: {
         bool more = false;
         view *v = find_view_by_req(ev->request_id, &more);
@@ -511,7 +570,7 @@ static void handle_vam_event(vam_event *ev)
         } else if (!v->page) {
             v->failed = true;
             snprintf(v->error, sizeof(v->error), "%s",
-                     ev->message[0] ? ev->message : "Something went wrong.");
+                     ev->message[0] ? tr_message(ev->message) : tr("Something went wrong."));
         }
         break;
     }
@@ -527,7 +586,7 @@ static void handle_vam_event(vam_event *ev)
                 continue;
             if (ev->result != VAM_OK) {
                 apply_saved(g_saves[i].uri, g_saves[i].prev);
-                app_toast(ev->message[0] ? ev->message : "Couldn't update your library.");
+                app_toast(ev->message[0] ? ev->message : tr("Couldn't update your library."));
             }
             g_saves[i].req = 0;
         }
@@ -539,6 +598,11 @@ static void handle_vam_event(vam_event *ev)
             app_request_view(&A.stacks[TAB_LIBRARY][0]);
         break;
     case VAM_EV_ERROR:
+        ui_diagnostic("backend error event result=%d", ev->result);
+        if (!A.auth.is_premium && (strstr(ev->message, "Free audio") || strstr(ev->message, "AAC") || strstr(ev->message, "public recording") || strstr(ev->message, "temporary audio")))
+            ui_diagnostic("audio error: %s", ev->message);
+        app_toast(ev->message);
+        break;
     case VAM_EV_TOAST:
         app_toast(ev->message);
         break;
@@ -574,10 +638,20 @@ bool app_init(SDL_Window *w, SDL_Renderer *r)
        full-scale tracks clip the Vita's speaker above ~80% volume. */
     cfg.initial_volume = platform_is_vita() ? 65535 : 52000;
     cfg.normalize_volume = 1;
+    if (platform_is_vita()) {
+        char path[512];
+        snprintf(path, sizeof(path), "%svam-ui-015.log", cfg.data_dir);
+        g_ui_log = fopen(path, "w");
+        g_ui_log_error = g_ui_log ? 0 : (errno ? errno : 1);
+        ui_diagnostic("VitaSpot UI " VAM_APP_VERSION);
+        ui_diagnostic("data directory: %s", cfg.data_dir);
+    }
     vam_result res = vam_init(&cfg);
+    ui_diagnostic("vam_init result=%d", res);
     if (res != VAM_OK)
         SDL_Log("vam_init failed: %d", res);
     vam_log("VitaSpot " VAM_APP_VERSION);
+    if (platform_is_vita()) probe_backend_log();
     vam_get_auth_state(&A.auth);
     vam_get_player_state(&A.player);
     return true;
@@ -590,6 +664,8 @@ void app_shutdown(void)
             view_free(&A.stacks[t][d]);
     prefs_flush();
     vam_shutdown();
+    ui_diagnostic("shutdown complete");
+    if (g_ui_log) { fclose(g_ui_log); g_ui_log = NULL; }
 }
 
 static void global_buttons(void)
@@ -612,17 +688,17 @@ static void global_buttons(void)
     if (ui_btn(BTN_TRIANGLE)) {
         ui_consume(BTN_TRIANGLE);
         if (A.player.has_track)
-            check(app_is_playing() ? vam_pause() : vam_resume(), "change playback");
+            check(app_is_playing() ? vam_pause() : vam_resume(), tr("change playback"));
     }
     if (ui_btn(BTN_L)) {
         ui_consume(BTN_L);
         if (A.player.has_track)
-            check(vam_prev(), "skip back");
+            check(vam_prev(), tr("skip back"));
     }
     if (ui_btn(BTN_R)) {
         ui_consume(BTN_R);
         if (A.player.has_track)
-            check(vam_next(), "skip");
+            check(vam_next(), tr("skip"));
     }
     if (ui_btn(BTN_SELECT)) {
         ui_consume(BTN_SELECT);
@@ -721,8 +797,6 @@ void app_frame(float dt)
 
     if (A.auth.status != VAM_AUTH_LOGGED_IN) {
         screen_login();
-    } else if (!A.auth.is_premium) {
-        screen_premium();
     } else {
         global_buttons();
         draw_main();

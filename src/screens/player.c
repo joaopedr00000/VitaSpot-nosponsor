@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "../app.h"
+#include "../i18n.h"
 #include "../gfx/images.h"
 #include "../gfx/text.h"
 #include "../lyrics.h"
@@ -199,7 +200,7 @@ void screen_sidebar(void)
         if (res.focused)
             gfx_rrect(r, 8, rgb(C_SURFACE_HI));
         gfx_icon(icons[i][active], r.x + r.w / 2, r.y + 23, 26, c);
-        text_draw_aligned(labels[i], r.x + r.w / 2, r.y + 40, FS_XS, active ? FW_BOLD : FW_REGULAR, c, r.w,
+        text_draw_aligned(tr(labels[i]), r.x + r.w / 2, r.y + 40, FS_XS, active ? FW_BOLD : FW_REGULAR, c, r.w,
                           ALIGN_CENTER);
         if (res.focused)
             draw_focus_ring(r, 8);
@@ -252,7 +253,7 @@ void screen_player_bar(void)
     gfx_rect(rect(0, y, SCREEN_W, PLAYER_H), rgb(C_BG_DEEP));
     gfx_rect(rect(0, y, SCREEN_W, 1), rgb(C_DIVIDER));
     if (!A.player.has_track) {
-        text_draw_vc("Pick something to play", 20, y + PLAYER_H / 2.0f, FS_S, FW_REGULAR, rgb(C_MUTED), 300);
+        text_draw_vc(tr("Pick something to play"), 20, y + PLAYER_H / 2.0f, FS_S, FW_REGULAR, rgb(C_MUTED), 300);
         return;
     }
     const vam_item *t = &A.player.track;
@@ -296,10 +297,10 @@ void screen_now_playing(void)
     float t = A.np_anim;
     float e = 1 - (1 - t) * (1 - t) * (1 - t);
     float oy = (1 - e) * SCREEN_H;
-    const vam_item *tr = &A.player.track;
+    const vam_item *track = &A.player.track;
 
     color target = rgb(0x404040);
-    images_get(tr->image_url, &target);
+    images_get(track->image_url, &target);
     A.np_color = color_lerp(A.np_color, target, A.dt * 4 > 1 ? 1 : A.dt * 4);
 
     gfx_rect(rect(0, oy, SCREEN_W, SCREEN_H), rgb(C_BG));
@@ -309,14 +310,14 @@ void screen_now_playing(void)
 
     if (icon_button(ui_id("np.close"), ICON_CHEVRON_DOWN, 36, oy + 32, 28, 52, rgb(C_TEXT)))
         app_set_now_playing(false);
-    char from[64];
+    char from[128];
     const char *k = "";
-    if (strncmp(A.player.context_uri, "spotify:album:", 14) == 0) k = "ALBUM";
-    else if (strncmp(A.player.context_uri, "spotify:playlist:", 17) == 0) k = "PLAYLIST";
-    else if (strncmp(A.player.context_uri, "spotify:artist:", 15) == 0) k = "ARTIST";
-    else if (strstr(A.player.context_uri, "collection")) k = "YOUR LIBRARY";
+    if (strncmp(A.player.context_uri, "spotify:album:", 14) == 0) k = tr("ALBUM");
+    else if (strncmp(A.player.context_uri, "spotify:playlist:", 17) == 0) k = tr("PLAYLIST");
+    else if (strncmp(A.player.context_uri, "spotify:artist:", 15) == 0) k = tr("ARTIST");
+    else if (strstr(A.player.context_uri, "collection")) k = tr("YOUR LIBRARY");
     if (A.player.context_title[0]) {
-        snprintf(from, sizeof(from), k[0] ? "PLAYING FROM %s" : "PLAYING FROM", k);
+        snprintf(from, sizeof(from), k[0] ? tr("PLAYING FROM %s") : tr("PLAYING FROM"), k);
         text_draw_aligned(from, SCREEN_W / 2.0f, oy + 12, FS_XS, FW_REGULAR, rgb(C_TEXT), 500, ALIGN_CENTER);
         text_draw_aligned(A.player.context_title, SCREEN_W / 2.0f, oy + 32, FS_S, FW_BOLD, rgb(C_TEXT), 500,
                           ALIGN_CENTER);
@@ -337,7 +338,7 @@ void screen_now_playing(void)
     if (icon_button(ui_id("np.queue"), ICON_QUEUE, SCREEN_W - 92, oy + 32, 24, 52, rgb(C_TEXT)))
         app_open_uri("vam:queue");
     if (icon_button(ui_id("np.more"), ICON_MORE, SCREEN_W - 36, oy + 32, 24, 52, rgb(C_TEXT)))
-        app_open_sheet(tr, A.player.context_uri, 0);
+        app_open_sheet(track, A.player.context_uri, 0);
 
     /* Artwork, or the lyrics in its place (fading in when switched on). */
     static float lyrics_fade;
@@ -348,7 +349,7 @@ void screen_now_playing(void)
         lyrics_draw(art, oy + 262 + 2.5f, lyrics_fade);
     } else {
         gfx_shadow(art, 8, 22, 200);
-        draw_cover(tr->image_url, art, 8, tr->kind, tr->title);
+        draw_cover(track->image_url, art, 8, track->kind, track->title);
     }
 
     /* Track info. With lyrics showing, the cover moves next to the title,
@@ -361,28 +362,28 @@ void screen_now_playing(void)
         static char measured[2 * VAM_TEXT_MAX + 2];
         static float cover_mid = 186.5f; /* Latin, until the fonts can measure */
         char key[sizeof(measured)];
-        snprintf(key, sizeof(key), "%s\n%s", tr->title, tr->subtitle);
+        snprintf(key, sizeof(key), "%s\n%s", track->title, track->subtitle);
         float t_top, t_bottom, a_top, a_bottom;
-        if (strcmp(measured, key) != 0 && text_vmetrics(tr->title, FS_XXL, FW_BOLD, &t_top, &t_bottom) &&
-            text_vmetrics(tr->subtitle, FS_L, FW_REGULAR, &a_top, &a_bottom)) {
+        if (strcmp(measured, key) != 0 && text_vmetrics(track->title, FS_XXL, FW_BOLD, &t_top, &t_bottom) &&
+            text_vmetrics(track->subtitle, FS_L, FW_REGULAR, &a_top, &a_bottom)) {
             cover_mid = (150 + t_top + 196 + a_bottom) / 2;
             memcpy(measured, key, sizeof(measured));
         }
-        draw_cover(tr->image_url, rect(x0, oy + cover_mid - 30, 60, 60), 4, tr->kind, tr->title);
+        draw_cover(track->image_url, rect(x0, oy + cover_mid - 30, 60, 60), 4, track->kind, track->title);
         tx = x0 + 74;
     }
     float tw = w - 50 - (tx - x0);
-    marquee_text(ui_id("np.title"), tr->title, tx, oy + 150, FS_XXL, FW_BOLD, rgb(C_TEXT), tw);
+    marquee_text(ui_id("np.title"), track->title, tx, oy + 150, FS_XXL, FW_BOLD, rgb(C_TEXT), tw);
     rectf artist_r = rect(tx, oy + 192, tw, 32);
     ui_res ar = ui_item(ui_id("np.artist"), artist_r, 0);
-    text_draw(tr->subtitle, tx, oy + 196, FS_L, FW_REGULAR, rgb(ar.pressed ? C_TEXT : C_SUBTEXT), tw);
+    text_draw(track->subtitle, tx, oy + 196, FS_L, FW_REGULAR, rgb(ar.pressed ? C_TEXT : C_SUBTEXT), tw);
     if (ar.focused)
         draw_focus_ring(artist_r, 4);
-    if (ar.clicked && tr->artist_uri[0])
-        app_open_uri(tr->artist_uri);
-    if (icon_button(ui_id("np.like"), tr->is_saved ? ICON_HEART : ICON_HEART_OUTLINE, x0 + w - 14, oy + 186, 26,
-                    52, tr->is_saved ? rgb(C_ACCENT) : rgb(C_TEXT)))
-        app_toggle_saved(tr->uri, tr->is_saved);
+    if (ar.clicked && track->artist_uri[0])
+        app_open_uri(track->artist_uri);
+    if (icon_button(ui_id("np.like"), track->is_saved ? ICON_HEART : ICON_HEART_OUTLINE, x0 + w - 14, oy + 186, 26,
+                    52, track->is_saved ? rgb(C_ACCENT) : rgb(C_TEXT)))
+        app_toggle_saved(track->uri, track->is_saved);
 
     seek_slider(ui_id("np.seek"), rect(x0, oy + 262, w, 5), true, oy + 276, 0);
     transport("np", x0 + w / 2, oy + 346, 72, 32, 30);
@@ -392,9 +393,9 @@ void screen_now_playing(void)
 
     if (!A.player.is_active_device) {
         gfx_icon(ICON_DEVICE, x0 + 10, oy + 462, 20, rgb(C_ACCENT));
-        text_draw_vc("Playing on another device", x0 + 30, oy + 462, FS_S, FW_BOLD, rgb(C_ACCENT), w);
+        text_draw_vc(tr("Playing on another device"), x0 + 30, oy + 462, FS_S, FW_BOLD, rgb(C_ACCENT), w);
     }
 
-    text_draw_aligned("VitaSpot is an unofficial Spotify client.", SCREEN_W / 2.0f, oy + SCREEN_H - 28, FS_XS,
+    text_draw_aligned(tr(A.auth.is_premium ? "VitaSpot is an unofficial Spotify client." : "Free account: Spotify library, alternate audio source."), SCREEN_W / 2.0f, oy + SCREEN_H - 28, FS_XS,
                       FW_REGULAR, rgb(C_MUTED), SCREEN_W - 40, ALIGN_CENTER);
 }

@@ -87,10 +87,14 @@ impl AudioKeyManager {
             seq
         });
 
-        self.send_key_request(seq, track, file)?;
+        if let Err(e) = self.send_key_request(seq, track, file) {
+            self.lock(|inner| { inner.pending.remove(&seq); });
+            return Err(e);
+        }
         const KEY_RESPONSE_TIMEOUT: Duration = Duration::from_millis(1500);
         match tokio::time::timeout(KEY_RESPONSE_TIMEOUT, rx).await {
             Err(_) => {
+                self.lock(|inner| { inner.pending.remove(&seq); });
                 error!("Audio key response timeout");
                 Err(AudioKeyError::Timeout.into())
             }

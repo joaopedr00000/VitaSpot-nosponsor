@@ -40,6 +40,7 @@ use crate::volume::{self, SystemMixer};
 pub enum Command {
     Shutdown,
     Logout,
+    FreeEnded(u64),
     Play {
         context: String,
         track: String,
@@ -96,6 +97,7 @@ const PLAYER_TICK: Duration = Duration::from_millis(100);
 const VOLUME_TICK: Duration = Duration::from_millis(50);
 const SLOW_TICK: Duration = Duration::from_secs(1);
 const SUSPEND_GAP_MS: u64 = 30_000;
+const BUFFER_TIMEOUT_MS: u64 = 30_000;
 // Spirc reports option changes late and in steps: switching repeat takes two
 // calls (clear one flag, set the other), and a volume drag sends many values
 // whose echoes arrive after the drag ends. Either would make the control
@@ -123,6 +125,7 @@ pub async fn run(shared: Arc<Shared>) {
         // shutdown hang the host process.
         let _ = tokio::time::timeout(Duration::from_secs(2), discovery.shutdown()).await;
     }
+    engine.cancel_pairing();
     engine.teardown().await;
     *backend
         .commands
@@ -136,6 +139,8 @@ struct Engine {
     backend: Arc<Backend>,
     commands: UnboundedReceiver<Command>,
     phase: Phase,
+    free_mode: bool,
+    free_player: crate::free_player::FreePlayer,
     cache: Option<Cache>,
     session: Option<Session>,
     spirc: Option<Spirc>,
@@ -146,6 +151,8 @@ struct Engine {
     player_events: Option<PlayerEventChannel>,
     spirc_done: Option<oneshot::Receiver<()>>,
     discovery: Option<Discovery>,
+    pairing: Option<tokio::task::JoinHandle<Result<Credentials, &'static str>>>,
+    pairing_retry_at: tokio::time::Instant,
     credentials: Option<Credentials>,
     last_snapshot: ConnectSnapshot,
     last_credentials_marker: Option<String>,
@@ -160,6 +167,8 @@ struct Engine {
     discovery_retry_at: Option<tokio::time::Instant>,
     last_wifi: bool,
     last_tick_ms: u64,
+    buffering_since: Option<u64>,
+    buffering_timed_out: bool,
     shutting_down: bool,
     /// Tracks that failed to load since the last one played. Spirc (vendored)
     /// stops playback once a few in a row fail; this picks the message.
@@ -200,6 +209,8 @@ impl Engine {
             backend,
             commands,
             phase: Phase::Starting,
+            free_mode: false,
+            free_player: crate::free_player::FreePlayer::default(),
             cache,
             session: None,
             spirc: None,
@@ -209,6 +220,8 @@ impl Engine {
             player_events: None,
             spirc_done: None,
             discovery: None,
+            pairing: None,
+            pairing_retry_at: tokio::time::Instant::now(),
             credentials: None,
             last_snapshot: ConnectSnapshot::default(),
             last_credentials_marker: None,
@@ -220,6 +233,8 @@ impl Engine {
             discovery_retry_at: None,
             last_wifi: wifi,
             last_tick_ms: now_ms_inner(),
+            buffering_since: None,
+            buffering_timed_out: false,
             shutting_down: false,
             unavailable_in_a_row: 0,
         };
@@ -368,12 +383,40 @@ impl Engine {
     // ------------------------------------------------------------------
 
     async fn handle_command(&mut self, command: Command) -> bool {
+        if self.free_mode {
+            match &command {
+                Command::Play { context, track, index } => {
+                    if context == "vam:audio-test" && track.is_empty() {
+                        self.free_player.selftest(self.shared.clone());
+                    } else {
+                        self.free_player.play(self.shared.clone(), context.clone(), track.clone(), *index);
+                    }
+                    return true;
+                }
+                Command::Pause => { self.free_player.pause(); return true; }
+                Command::Resume => { self.free_player.resume(self.shared.clone()); return true; }
+                Command::Seek(ms) => { self.free_player.seek(*ms); return true; }
+                Command::Next => { self.free_player.skip(self.shared.clone(), true); return true; }
+                Command::Prev => { self.free_player.skip(self.shared.clone(), false); return true; }
+                Command::FreeEnded(generation) => { self.free_player.ended(self.shared.clone(), *generation); return true; }
+                Command::AddToQueue(uri) => { self.free_player.add(&self.shared, uri); return true; }
+                Command::SetShuffle(_) | Command::SetRepeat(_) => {
+                    self.backend.emit_toast("Shuffle and repeat are not available in Free audio mode yet.");
+                    return true;
+                }
+                _ => {}
+            }
+        }
         match command {
+            Command::Play { ref context, .. } if context == "vam:audio-test" => {
+                self.backend.emit_toast("Audio test is available in Free mode only.");
+            }
             Command::Shutdown => {
                 self.shutting_down = true;
                 return false;
             }
             Command::Logout => self.logout().await,
+            Command::FreeEnded(_) => {},
             Command::RequestPage {
                 request_id,
                 uri,
@@ -401,6 +444,9 @@ impl Engine {
                 track,
                 index,
             } => {
+                self.buffering_since = Some(now_ms_inner());
+                self.buffering_timed_out = false;
+                log::info!("play requested: context={context:?} track={track:?} index={index} ad_filter={}", crate::ad_filter::enabled());
                 self.optimistic_play(&context);
                 self.spawn_play(context, track, index);
             }
@@ -416,11 +462,21 @@ impl Engine {
                 }
             }
             Command::Resume => {
+                self.buffering_timed_out = false;
+                self.buffering_since = None;
                 self.optimistic_resume();
                 self.spawn_simple_spirc(true, |spirc| spirc.play());
             }
-            Command::Next => self.spawn_next(),
-            Command::Prev => self.spawn_simple_spirc(true, |spirc| spirc.prev()),
+            Command::Next => {
+                self.buffering_timed_out = false;
+                self.buffering_since = None;
+                self.spawn_next();
+            }
+            Command::Prev => {
+                self.buffering_timed_out = false;
+                self.buffering_since = None;
+                self.spawn_simple_spirc(true, |spirc| spirc.prev());
+            }
             Command::Seek(position) => {
                 log::info!(
                     "seek to {position} ms requested (active: {})",
@@ -790,6 +846,7 @@ impl Engine {
     // ------------------------------------------------------------------
 
     fn handle_player_event(&mut self, event: PlayerEvent) {
+        if self.free_mode { return; }
         match event {
             PlayerEvent::TrackChanged { audio_item } => {
                 let item = metadata::item_from_audio(&audio_item);
@@ -819,6 +876,9 @@ impl Engine {
                 });
             }
             PlayerEvent::Loading { position_ms, .. } => {
+                if self.buffering_timed_out { return; }
+                self.buffering_since.get_or_insert_with(now_ms_inner);
+                log::info!("player loading at {position_ms} ms");
                 self.backend.set_player(move |state| {
                     state.playback = VAM_PLAYBACK_BUFFERING;
                     state.position_ms = position_ms;
@@ -826,8 +886,10 @@ impl Engine {
                     state.seq = state.seq.wrapping_add(1);
                 });
             }
-            PlayerEvent::Playing { position_ms, .. }
-            | PlayerEvent::PositionCorrection { position_ms, .. } => {
+            PlayerEvent::Playing { position_ms, .. } => {
+                log::info!("player confirmed playback at {position_ms} ms");
+                self.buffering_since = None;
+                self.buffering_timed_out = false;
                 self.unavailable_in_a_row = 0;
                 self.backend.set_player(move |state| {
                     state.playback = VAM_PLAYBACK_PLAYING;
@@ -836,7 +898,16 @@ impl Engine {
                     state.seq = state.seq.wrapping_add(1);
                 });
             }
+            PlayerEvent::PositionCorrection { position_ms, .. } => {
+                // A clock correction is not proof that audio has started.
+                self.backend.set_player(move |state| {
+                    state.position_ms = position_ms;
+                    state.position_timestamp_ms = now_ms_inner();
+                    state.seq = state.seq.wrapping_add(1);
+                });
+            }
             PlayerEvent::Paused { position_ms, .. } => {
+                self.buffering_since = None;
                 self.backend.set_player(move |state| {
                     state.playback = VAM_PLAYBACK_PAUSED;
                     state.position_ms = position_ms;
@@ -853,6 +924,7 @@ impl Engine {
                 });
             }
             PlayerEvent::Stopped { .. } => {
+                self.buffering_since = None;
                 if self.unavailable_in_a_row > 0 {
                     self.unavailable_in_a_row = 0;
                     self.backend.emit_error(
@@ -879,11 +951,11 @@ impl Engine {
                 });
             }
             PlayerEvent::Unavailable { track_id, .. } => {
-                log::warn!("track unavailable: {}", track_id.to_uri().unwrap_or_default());
+                log::warn!("track unavailable: {} (premium={})", track_id.to_uri().unwrap_or_default(), self.backend.auth_snapshot().is_premium);
+                log::logger().flush();
                 self.unavailable_in_a_row += 1;
                 if self.unavailable_in_a_row == 1 {
-                    self.backend
-                        .emit_error("That track isn't available. Skipping to the next one.");
+                    self.backend.emit_error("Spotify could not load this track. Check vam.log for the cause.");
                 }
             }
             PlayerEvent::EndOfTrack { .. } => {}
@@ -911,10 +983,15 @@ impl Engine {
     }
 
     fn apply_snapshot(&mut self, force: bool) {
+        if self.free_mode { return; }
         let Some(spirc) = self.spirc.clone() else {
             return;
         };
         let snapshot = spirc.snapshot();
+        crate::ad_filter::update(&snapshot.track_uri, &snapshot.track_metadata, snapshot.is_active && (snapshot.is_playing || snapshot.is_buffering));
+        if self.buffering_timed_out && snapshot.is_buffering {
+            return;
+        }
         if !force && !snapshot_changed(&snapshot, &self.last_snapshot) {
             return;
         }
@@ -956,14 +1033,12 @@ impl Engine {
         }
 
         // Playback status.
-        let playback = if snapshot.track_uri.is_empty() && !snapshot.is_playing {
+        let playback = if snapshot.is_buffering {
+            VAM_PLAYBACK_BUFFERING
+        } else if snapshot.track_uri.is_empty() && !snapshot.is_playing {
             VAM_PLAYBACK_STOPPED
         } else if snapshot.is_playing && !snapshot.is_paused {
-            if snapshot.is_buffering {
-                VAM_PLAYBACK_BUFFERING
-            } else {
-                VAM_PLAYBACK_PLAYING
-            }
+            VAM_PLAYBACK_PLAYING
         } else if snapshot.is_paused {
             VAM_PLAYBACK_PAUSED
         } else {
@@ -1159,6 +1234,34 @@ impl Engine {
     // Slow maintenance
     // ------------------------------------------------------------------
 
+    // Bound the optimistic UI and Connect buffering state. A timeout does not
+    // change the account's authorization or attempt to decrypt rejected audio.
+    fn check_buffer_timeout(&mut self, now: u64) {
+        if self.backend.player_snapshot().playback != VAM_PLAYBACK_BUFFERING {
+            self.buffering_since = None;
+            return;
+        }
+        let started = *self.buffering_since.get_or_insert(now);
+        if now.saturating_sub(started) < BUFFER_TIMEOUT_MS { return; }
+        self.buffering_since = None;
+        self.buffering_timed_out = true;
+        let auth = self.backend.auth_snapshot();
+        log::warn!("playback buffering timeout: premium={} active={} context={:?} track={:?}",
+            auth.is_premium, self.last_snapshot.is_active,
+            self.last_snapshot.context_uri, self.last_snapshot.track_uri);
+        log::logger().flush();
+        if let Some(spirc) = &self.spirc {
+            if let Err(e) = spirc.pause() {
+                log::warn!("pause after buffering timeout failed: {e}");
+            }
+        }
+        self.backend.set_player(|state| {
+            state.playback = VAM_PLAYBACK_STOPPED;
+            state.seq = state.seq.wrapping_add(1);
+        });
+        self.backend.emit_error("Playback timed out. Check vam.log for authorization or network errors.");
+    }
+
     async fn slow_tick(&mut self) {
         let now = now_ms_inner();
         let gap = now.saturating_sub(self.last_tick_ms);
@@ -1175,6 +1278,7 @@ impl Engine {
         }
 
         if self.phase == Phase::LoggedIn {
+            if !self.free_mode { self.check_buffer_timeout(now); }
             // The Vita drops sockets when it sleeps; detect the jump and
             // re-establish the session without involving the UI.
             if gap > SUSPEND_GAP_MS {
@@ -1216,6 +1320,11 @@ impl Engine {
         }
 
         if self.phase == Phase::WaitingForCredentials {
+            if !wifi { self.cancel_pairing(); }
+            if wifi && self.reconnect_at.is_none() {
+                self.poll_pairing().await;
+                if self.phase == Phase::LoggedIn { return; }
+            }
             if self.discovery.is_none() && wifi {
                 let retry = self
                     .discovery_retry_at
@@ -1278,6 +1387,7 @@ impl Engine {
     }
 
     async fn login(&mut self, credentials: Credentials) -> Result<(), String> {
+        self.cancel_pairing();
         self.teardown().await;
         self.unavailable_in_a_row = 0;
 
@@ -1376,7 +1486,7 @@ impl Engine {
         self.system_mixer = system_mixer;
         self.player_events = Some(player_events);
         self.spirc_done = Some(done_rx);
-        self.credentials = Some(credentials);
+        self.credentials = self.stored_credentials().or(Some(credentials));
         self.phase = Phase::LoggedIn;
         self.shared.web.set_session(session.clone());
 
@@ -1404,16 +1514,26 @@ impl Engine {
                 .unwrap_or_else(|| username.clone());
         }
 
-        let message = if premium {
-            String::new()
-        } else {
-            "Spotify Premium is required to play music.".to_string()
-        };
+        self.free_mode = product.as_deref() == Some("free");
+        if self.free_mode {
+            if let Some(player) = self.player.take() { player.stop(); }
+            if let Some(spirc) = self.spirc.take() { let _ = spirc.shutdown(); }
+            if let Some(done) = self.spirc_done.take() {
+                let _ = tokio::time::timeout(Duration::from_secs(3), done).await;
+            }
+            self.player_events = None;
+            crate::ad_filter::reset();
+            crate::free_source::cleanup(&self.backend);
+            log::info!("Free mode: Spotify catalog, separate audio source");
+        }
+        let message = if premium { String::new() }
+            else if self.free_mode { "Free account: Spotify library, alternate audio source.".to_string() }
+            else { "Free account: browsing enabled; playback depends on Spotify authorization.".to_string() };
 
         self.backend.set_auth(|auth| {
             auth.status = VAM_AUTH_LOGGED_IN;
             auth.is_premium = premium as u8;
-            auth.zeroconf_active = 1;
+            auth.zeroconf_active = self.discovery.is_some() as u8;
             copy_str(&mut auth.username, &username);
             copy_str(&mut auth.display_name, &display_name);
             copy_str(&mut auth.image_url, &profile.image_url);
@@ -1428,7 +1548,7 @@ impl Engine {
         });
 
         log::info!(
-            "logged in as {username:?}, display name {display_name:?} (premium: {premium}, product: {product:?})"
+            "account authorized for login (premium: {premium}, product: {product:?})"
         );
         self.apply_snapshot(true);
         Ok(())
@@ -1446,6 +1566,8 @@ impl Engine {
     }
 
     async fn logout(&mut self) {
+        self.cancel_pairing();
+        self.pairing_retry_at = tokio::time::Instant::now();
         self.teardown().await;
         // Blank the saved login rather than deleting it: the file stays where
         // a replacement credentials.json is expected.
@@ -1477,6 +1599,11 @@ impl Engine {
     }
 
     async fn teardown(&mut self) {
+        self.free_player.reset();
+        self.free_mode = false;
+        self.buffering_since = None;
+        self.buffering_timed_out = false;
+        crate::ad_filter::reset();
         log::info!("tearing down backend");
         if let Some(player) = self.player.take() {
             player.stop();
@@ -1511,6 +1638,9 @@ impl Engine {
         if self.shutting_down {
             return;
         }
+        self.free_player.reset();
+        self.free_mode = false;
+        crate::ad_filter::reset();
         self.phase = Phase::WaitingForCredentials;
         self.player = None;
         self.player_events = None;
@@ -1528,6 +1658,38 @@ impl Engine {
             auth.zeroconf_active = self.discovery.is_some() as u8;
             copy_str(&mut auth.message, message);
         });
+    }
+
+    fn cancel_pairing(&mut self) {
+        if let Some(task) = self.pairing.take() { task.abort(); }
+        self.backend.set_auth(|auth| {
+            auth.login_url = [0; VAM_URL_MAX];
+            auth.login_code = [0; 32];
+        });
+    }
+
+    async fn poll_pairing(&mut self) {
+        if self.pairing.as_ref().is_some_and(|task| task.is_finished()) {
+            if let Some(task) = self.pairing.take() {
+                self.cancel_pairing();
+                self.pairing_retry_at = tokio::time::Instant::now() + Duration::from_secs(30);
+                match task.await {
+                    Ok(Ok(credentials)) => {
+                        if self.login(credentials).await.is_err() {
+                            self.backend.set_auth_status(VAM_AUTH_ERROR,
+                                "Pairing approved, but Spotify session login failed.");
+                        }
+                    }
+                    Ok(Err(message)) => self.backend.set_auth_status(VAM_AUTH_ERROR, message),
+                    Err(_) => self.backend.set_auth_status(VAM_AUTH_ERROR, "Pairing worker stopped."),
+                }
+            }
+        }
+        if self.phase == Phase::WaitingForCredentials && self.pairing.is_none()
+            && tokio::time::Instant::now() >= self.pairing_retry_at {
+            let backend = self.backend.clone();
+            self.pairing = Some(tokio::spawn(crate::device_login::run(backend)));
+        }
     }
 
     fn start_discovery(&mut self) {
@@ -1571,8 +1733,7 @@ impl Engine {
                     auth.zeroconf_active = 0;
                     copy_str(
                         &mut auth.message,
-                        "Zeroconf is unavailable. Copy a librespot credentials.json \
-                         into the VitaSpot data folder to sign in.",
+                        "Connect discovery unavailable. Try QR pairing or PC login.",
                     );
                 });
             }
