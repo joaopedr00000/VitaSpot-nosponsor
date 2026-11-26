@@ -38,7 +38,7 @@ static void ui_diagnostic(const char *format, ...)
 
 static void probe_backend_log(void)
 {
-    const char *names[] = {"vam-audio-014.log", "vam-audio-014-fallback.log"};
+    const char *names[] = {"vam-audio-015.log", "vam-audio-015-fallback.log"};
     g_backend_log_status = 0;
     for (int i = 0; i < 2; i++) {
         char path[512], line[256];
@@ -61,10 +61,10 @@ static void probe_backend_log(void)
 
 const char *app_diagnostic_status(void)
 {
-    if (g_ui_log_error) return "Could not write vam-ui-014.log";
-    if (g_backend_log_status == 1) return "Backend log: vam-audio-014.log";
-    if (g_backend_log_status == 2) return "Backend log: vam-audio-014-fallback.log";
-    return "Backend log missing; send vam-ui-014.log";
+    if (g_ui_log_error) return "Could not write vam-ui-015.log";
+    if (g_backend_log_status == 1) return "Backend log: vam-audio-015.log";
+    if (g_backend_log_status == 2) return "Backend log: vam-audio-015-fallback.log";
+    return "Backend log missing; send vam-ui-015.log";
 }
 
 #define PENDING_SAVES 16
@@ -640,7 +640,7 @@ bool app_init(SDL_Window *w, SDL_Renderer *r)
     cfg.normalize_volume = 1;
     if (platform_is_vita()) {
         char path[512];
-        snprintf(path, sizeof(path), "%svam-ui-014.log", cfg.data_dir);
+        snprintf(path, sizeof(path), "%svam-ui-015.log", cfg.data_dir);
         g_ui_log = fopen(path, "w");
         g_ui_log_error = g_ui_log ? 0 : (errno ? errno : 1);
         ui_diagnostic("VitaSpot UI " VAM_APP_VERSION);

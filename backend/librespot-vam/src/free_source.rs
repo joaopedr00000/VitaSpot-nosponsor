@@ -11,7 +11,7 @@ const MAX_AUDIO: usize = 32 * 1024 * 1024;
 pub type Result<T> = std::result::Result<T, &'static str>;
 pub const NETWORK: &str = "Free audio source connection failed.";
 pub const NO_MATCH: &str = "No matching public recording found.";
-pub const NO_FORMAT: &str = "No compatible AAC stream found.";
+pub const NO_FORMAT: &str = "Free audio: no compatible stream found.";
 pub const FILE_ERROR: &str = "Could not write temporary audio.";
 pub const AUDIO_ERROR: &str = "Free audio decoding failed.";
 pub const OUTPUT_ERROR: &str = "Free audio output failed.";
@@ -44,7 +44,7 @@ pub fn cleanup(backend: &Backend) {
     if let Ok(entries) = std::fs::read_dir(backend.config.path("tmp")) {
         for entry in entries.flatten() {
             if let Some(name) = entry.file_name().to_str() {
-                if name.starts_with("free-audio-") && name.ends_with(".m4a") {
+                if name.starts_with("free-audio-") && (name.ends_with(".m4a") || name.ends_with(".media")) {
                     let _ = std::fs::remove_file(entry.path());
                 }
             }
@@ -93,13 +93,41 @@ async fn json(client: &Client, url: String, query: &[(&str, &str)]) -> Result<Va
     }
     serde_json::from_slice(&body).map_err(|e| { log::warn!("Free source response is not JSON: {e}"); NETWORK })
 }
-fn select_audio(streams: &Value) -> Option<&str> {
-    streams["audioStreams"].as_array()?.iter().filter(|s| {
-        s["mimeType"].as_str().is_some_and(|m| m.starts_with("audio/mp4"))
-            && s["codec"].as_str().is_some_and(|c| c == "mp4a.40.2")
-            && s["url"].as_str().is_some_and(|u| Url::parse(u).is_ok_and(|p| p.scheme() == "https" && p.host_str().is_some() && p.username().is_empty() && p.password().is_none()))
-    }).max_by_key(|s| s["bitrate"].as_u64().unwrap_or(0))
-        .and_then(|s| s["url"].as_str())
+// Prefer known AAC-LC, then other codecs that are actually enabled. A
+// missing codec field is tolerated for known containers; the downloaded
+// bytes must still pass the decoder probe. Opus and HE-AAC are not claimed.
+fn stream_rank(s: &Value) -> Option<u8> {
+    let mime = s["mimeType"].as_str()?.to_ascii_lowercase();
+    let kind = mime.split(';').next()?.trim();
+    let declared = s["codec"].as_str().unwrap_or("").trim().to_ascii_lowercase();
+    let from_mime = mime.split(';').skip(1).find_map(|p| p.trim().strip_prefix("codecs="))
+        .map(|v| v.trim().trim_matches('"')).unwrap_or("");
+    let codec = if declared.is_empty() { from_mime } else { declared.as_str() };
+    match (kind, codec) {
+        ("audio/mp4" | "audio/m4a" | "audio/x-m4a", "mp4a.40.2" | "aac" | "") => Some(5),
+        ("audio/mpeg" | "audio/mp3", "mp3" | "mp4a.40.34" | "") => Some(4),
+        ("audio/ogg" | "application/ogg", "vorbis" | "") => Some(3),
+        ("audio/flac" | "audio/x-flac", "flac" | "") => Some(2),
+        ("audio/wav" | "audio/x-wav" | "audio/wave", "pcm" | "") => Some(1),
+        _ => None,
+    }
+}
+fn select_audio(streams: &Value) -> Vec<&str> {
+    let mut choices: Vec<_> = streams["audioStreams"].as_array().into_iter().flatten()
+        .filter_map(|s| {
+            let rank = stream_rank(s)?;
+            let url = s["url"].as_str()?;
+            let parsed = Url::parse(url).ok()?;
+            if parsed.scheme() != "https" || parsed.host_str().is_none()
+                || !parsed.username().is_empty() || parsed.password().is_some() { return None; }
+            Some((rank, s["bitrate"].as_u64().unwrap_or(0), url))
+        }).collect();
+    choices.sort_by_key(|(rank, bitrate, _)| std::cmp::Reverse((*rank, *bitrate)));
+    let mut urls = Vec::new();
+    for (_, _, url) in choices {
+        if !urls.contains(&url) { urls.push(url); }
+    }
+    urls
 }
 async fn download(client: &Client, backend: &Backend, url: &str) -> Result<TempAudio> {
     let mut response = client.get(url).timeout(Duration::from_secs(90)).send().await.map_err(|_| NETWORK)?;
@@ -109,11 +137,11 @@ async fn download(client: &Client, backend: &Backend, url: &str) -> Result<TempA
     }
     if response.content_length().is_some_and(|n| n > MAX_AUDIO as u64) { return Err(LIMIT_ERROR); }
     let mime = response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("");
-    if !(mime.starts_with("audio/") || mime.starts_with("video/mp4") || mime.starts_with("application/octet-stream")) {
-        log::warn!("Free source media content type rejected");
+    if !(mime.starts_with("audio/") || mime.starts_with("video/mp4") || mime.starts_with("application/ogg") || mime.starts_with("application/octet-stream")) {
+        log::warn!("Free source media content type rejected: {mime}");
         return Err(NO_FORMAT);
     }
-    let temp = TempAudio(PathBuf::from(backend.config.path(&format!("tmp/free-audio-{}-{}.m4a", crate::util::now_ms_inner(), backend.next_request_id()))));
+    let temp = TempAudio(PathBuf::from(backend.config.path(&format!("tmp/free-audio-{}-{}.media", crate::util::now_ms_inner(), backend.next_request_id()))));
     let mut file = File::create(&temp.0).map_err(|_| FILE_ERROR)?;
     let mut size = 0usize;
     while let Some(chunk) = response.chunk().await.map_err(|_| NETWORK)? {
@@ -124,7 +152,7 @@ async fn download(client: &Client, backend: &Backend, url: &str) -> Result<TempA
     if size < 64 { return Err(NO_FORMAT); }
     file.flush().map_err(|_| FILE_ERROR)?;
     drop(file);
-    log::info!("Free source: received {size} M4A bytes");
+    log::info!("Free source: received {size} audio bytes");
     Ok(temp)
 }
 pub async fn resolve(backend: &Backend, track: &Item) -> Result<TempAudio> {
@@ -150,10 +178,27 @@ pub async fn resolve(backend: &Backend, track: &Item) -> Result<TempAudio> {
                 if streams["livestream"].as_bool() == Some(true) { continue; }
                 // Recheck the returned recording; search results can be stale.
                 let Some(_) = match_score(track, &streams) else { error = NO_MATCH; continue; };
-                let Some(url) = select_audio(&streams) else { log::warn!("Free source: matched recording has no supported AAC-LC stream"); continue; };
-                log::info!("Free source: matched recording {id}; AAC-LC/M4A");
-                match download(&client, backend, url).await {
-                    Ok(file) => return Ok(file), Err(e) => error = e,
+                if let Some(entries) = streams["audioStreams"].as_array() {
+                    for entry in entries.iter().take(20) {
+                        log::info!("Free source offered MIME={} codec={} bitrate={}",
+                            entry["mimeType"].as_str().unwrap_or("?"),
+                            entry["codec"].as_str().unwrap_or("?"),
+                            entry["bitrate"].as_u64().unwrap_or(0));
+                    }
+                }
+                let choices = select_audio(&streams);
+                if choices.is_empty() { log::warn!("Free source: matched recording has no supported codec"); error = NO_FORMAT; continue; }
+                log::info!("Free source: matched recording {id}; {} compatible candidates", choices.len());
+                for url in choices.into_iter().take(3) {
+                    match download(&client, backend, url).await {
+                        Ok(file) => {
+                            let checked = File::open(&file.0).ok().and_then(|input| crate::free_pcm::open(input).ok());
+                            if checked.is_some() { return Ok(file); }
+                            log::warn!("Free source: downloaded bytes failed container/codec probe");
+                            error = AUDIO_ERROR;
+                        }
+                        Err(e) => error = e,
+                    }
                 }
             }
             Err(error)
@@ -182,8 +227,16 @@ mod tests {
         assert_eq!(video_id("/watch?v=../../"), None);
     }
     #[test]
-    fn select_only_supported_aac() {
+    fn select_supported_formats_prefer_aac() {
         let data = serde_json::json!({"audioStreams":[{"mimeType":"audio/webm","codec":"opus","bitrate":200000,"url":"https://example.org/opus"},{"mimeType":"audio/mp4","codec":"mp4a.40.2","bitrate":128000,"url":"https://example.org/aac"}]});
-        assert_eq!(select_audio(&data), Some("https://example.org/aac"));
+        assert_eq!(select_audio(&data), vec!["https://example.org/aac"]);
+        let data = serde_json::json!({"audioStreams":[
+            {"mimeType":"audio/mpeg","codec":"mp3","url":"https://example.org/mp3"},
+            {"mimeType":"audio/mp4; codecs=\"mp4a.40.2\"","url":"https://example.org/aac"},
+            {"mimeType":"audio/ogg","codec":"vorbis","url":"https://example.org/ogg"},
+            {"mimeType":"audio/mp4","codec":"mp4a.40.5","url":"https://example.org/he"},
+            {"mimeType":"audio/mpeg","codec":"mp3","url":"http://example.org/insecure"}
+        ]});
+        assert_eq!(select_audio(&data), vec!["https://example.org/aac","https://example.org/mp3","https://example.org/ogg"]);
     }
 }

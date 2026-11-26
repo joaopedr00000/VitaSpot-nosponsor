@@ -1,4 +1,4 @@
-//! Shared AAC decoder initialization and stereo resampling.
+//! Shared multi-format decoder initialization and stereo resampling.
 use std::fs::File;
 use symphonia::core::{
     codecs::{Decoder, DecoderOptions}, errors::{Error, Result},
@@ -8,7 +8,7 @@ use symphonia::core::{
 };
 pub fn open(input: File) -> Result<(Box<dyn FormatReader>, Box<dyn Decoder>, u32)> {
     let stream = MediaSourceStream::new(Box::new(input), MediaSourceStreamOptions::default());
-    let mut hint = Hint::new(); hint.with_extension("m4a");
+    let hint = Hint::new(); // Probe the actual bytes rather than trusting the file extension.
     let format = symphonia::default::get_probe().format(&hint, stream, &FormatOptions::default(), &MetadataOptions::default())?.format;
     let track = format.default_track().ok_or(Error::Unsupported("no audio track"))?;
     let id = track.id;

@@ -2,7 +2,7 @@ name: Build VPK
 
 on:
   push:
-    branches: [main]
+    branches: [main, test/qr-device-login]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -29,7 +29,7 @@ jobs:
       - name: Install host tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cmake make git curl bzip2 xz-utils python3
+          sudo apt-get install -y --no-install-recommends cmake make git curl bzip2 xz-utils python3 ffmpeg
 
       # VitaSDK + vdpm packages take several minutes to install; refresh the
       # cache weekly so new SDK fixes still come in.
@@ -75,8 +75,17 @@ jobs:
           key: cargo-vita-${{ env.VAM_RUST_TOOLCHAIN }}-${{ hashFiles('backend/librespot-vam/Cargo.lock', 'backend/librespot-vam/vendor/**/Cargo.toml') }}
           restore-keys: cargo-vita-${{ env.VAM_RUST_TOOLCHAIN }}-
 
-      - name: Validate AAC decoder and resampler on host
-        run: cargo +stable test --manifest-path tools/free-audio-check/Cargo.toml -- --nocapture
+      - name: Validate audio codecs and resampler on host
+        run: |
+          set -e
+          export VAM_CODEC_FIXTURES="$RUNNER_TEMP/vam-codec-fixtures"
+          mkdir -p "$VAM_CODEC_FIXTURES"
+          for pair in mp3:libmp3lame ogg:libvorbis flac:flac wav:pcm_s16le; do
+            ext="${pair%%:*}"
+            codec="${pair#*:}"
+            ffmpeg -v error -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=0.5" -ac 2 -c:a "$codec" "$VAM_CODEC_FIXTURES/tone.$ext"
+          done
+          cargo +stable test --manifest-path tools/free-audio-check/Cargo.toml -- --nocapture
 
       - name: Build backend (Rust)
         working-directory: backend/librespot-vam

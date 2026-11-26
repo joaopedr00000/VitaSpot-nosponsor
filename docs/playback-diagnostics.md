@@ -69,3 +69,7 @@ requires Premium. Do not replace the working QR login with arbitrary developer
 credentials or embed a client secret into the VPK. See
 https://developer.spotify.com/documentation/web-api/reference/start-a-users-playback
 and https://developer.spotify.com/documentation/soloist/reference/soloist-ctl.
+
+## 0.0.15d experimental Free audio compatibility
+
+The Free decoder probes actual media bytes and enables AAC-LC/M4A, MP3, Ogg Vorbis, FLAC and PCM/WAV. It logs the advertised codec and MIME type, retries supported candidates and rejects files that fail the decoder probe. Opus and HE-AAC are not supported by this build. No new external server has been verified. Premium playback and Spotify account handling are unchanged. The host CI validates synthetic audio for all five formats; audible output on Vita remains a hardware test. The local AAC self-test remains available. Current log names are `vam-audio-015.log` and `vam-ui-015.log`.

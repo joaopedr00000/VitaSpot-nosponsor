@@ -286,7 +286,7 @@ pub fn init_logging(data_dir: &str) {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         let dir = data_dir.trim_end_matches('/');
-        let mut path = format!("{dir}/vam-audio-014.log");
+        let mut path = format!("{dir}/vam-audio-015.log");
         let open = |p: &str| std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -295,7 +295,7 @@ pub fn init_logging(data_dir: &str) {
         let (file, primary_error) = match open(&path) {
             Ok(file) => (Some(file), None),
             Err(e) => {
-                path = format!("{dir}/vam-audio-014-fallback.log");
+                path = format!("{dir}/vam-audio-015-fallback.log");
                 (open(&path).ok(), Some(e))
             }
         };

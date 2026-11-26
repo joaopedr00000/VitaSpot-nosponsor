@@ -257,7 +257,7 @@ fn decode(shared: &Shared, control: &Control, output: &Mutex<()>, audio: TempAud
                 Err(e) => { log::warn!("Free packet read: {e}"); return Err(free_source::AUDIO_ERROR); }
             };
             if packet.track_id() != id { continue; }
-            let decoded = decoder.decode(&packet).map_err(|e| { log::warn!("Free AAC packet: {e}"); free_source::AUDIO_ERROR })?;
+            let decoded = decoder.decode(&packet).map_err(|e| { log::warn!("Free audio packet: {e}"); free_source::AUDIO_ERROR })?;
             let spec = *decoded.spec();
             let channels = spec.channels.count();
             if !(1..=2).contains(&channels) || !(8000..=96000).contains(&spec.rate) { return Err(free_source::NO_FORMAT); }
@@ -276,7 +276,7 @@ fn decode(shared: &Shared, control: &Control, output: &Mutex<()>, audio: TempAud
             frames += count as u64;
             let now = now_ms_inner();
             if !playing || now.saturating_sub(last_update) >= 250 {
-                if !playing { log::info!("Free source: decoded AAC PCM submitted to audio sink ({} Hz, {channels} channels)", spec.rate); }
+                if !playing { log::info!("Free source: decoded PCM submitted to audio sink ({} Hz, {channels} channels)", spec.rate); }
                 playing = true; last_update = now;
                 if !diagnostic { control.update(shared, |s| {
                     s.playback = VAM_PLAYBACK_PLAYING; s.position_ms = ((frames*1000/44100) as u32).min(s.track.duration_ms);
